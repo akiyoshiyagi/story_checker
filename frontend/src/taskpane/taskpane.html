@@ -1,0 +1,87 @@
+<!-- Copyright (c) Microsoft Corporation. All rights reserved. Licensed under the MIT License. -->
+<!-- This file shows how to design a first-run page that provides a welcome screen to the user about the features of the add-in. -->
+
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>箇条書き評価アドイン</title>
+
+    <!-- Office JavaScript API -->
+    <script type="text/javascript" src="https://appsforoffice.microsoft.com/lib/1.1/hosted/office.js"></script>
+
+    <!-- For more information on Fluent UI, visit https://developer.microsoft.com/fluentui#/. -->
+    <link rel="stylesheet" href="https://res-1.cdn.office.net/files/fabric-cdn-prod_20230815.002/office-ui-fabric-core/11.1.0/css/fabric.min.css"/>
+
+    <!-- Template styles -->
+    <link href="taskpane.css" rel="stylesheet" type="text/css" />
+    
+    <style>
+        #log-container {
+            margin-top: 20px;
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid #ccc;
+            padding: 10px;
+            font-family: monospace;
+            font-size: 12px;
+            background-color: #f9f9f9;
+        }
+        .log-entry {
+            margin-bottom: 5px;
+            padding: 3px;
+            border-bottom: 1px solid #eee;
+        }
+        .log-time {
+            color: #666;
+            margin-right: 5px;
+        }
+        .log-info {
+            color: #333;
+        }
+        .log-success {
+            color: #008000;
+        }
+        .log-error {
+            color: #d9534f;
+        }
+    </style>
+</head>
+
+<body class="ms-font-m ms-welcome ms-Fabric">
+    <header class="ms-welcome__header ms-bgColor-neutralLighter">
+        <img width="90" height="90" src="../../assets/logo-filled.png" alt="箇条書き評価" title="箇条書き評価" />
+        <h1 class="ms-font-su">箇条書き評価アドイン</h1>
+    </header>
+    <section id="sideload-msg" class="ms-welcome__main">
+        <h2 class="ms-font-xl">アドインを<a target="_blank" href="https://learn.microsoft.com/office/dev/add-ins/testing/test-debug-office-add-ins#sideload-an-office-add-in-for-testing">サイドロード</a>してください。</h2>
+    </section>
+    <main id="app-body" class="ms-welcome__main" style="display: none;">
+        <h2 class="ms-font-xl">箇条書きデータの評価</h2>
+        <p class="ms-font-l">ドキュメント内の箇条書きを読み取り、階層構造を解析して論理的な問題点を評価します。</p>
+        
+        <div class="ms-TextField">
+            <label class="ms-Label">バックエンドAPI URL:</label>
+            <input id="api-url" class="ms-TextField-field" type="text" value="http://127.0.0.1:8000/process-bullet-points">
+        </div>
+        
+        <div role="button" id="run" class="ms-welcome__action ms-Button ms-Button--hero ms-font-xl">
+            <span class="ms-Button-label">箇条書きを評価</span>
+        </div>
+        
+        <div id="result-container" style="margin-top: 20px; display: none;">
+            <h3 class="ms-font-l">評価結果:</h3>
+            <pre id="result" class="ms-font-m" style="background-color: #f4f4f4; padding: 10px; overflow: auto; max-height: 200px;"></pre>
+        </div>
+        
+        <div style="margin-top: 20px;">
+            <h3 class="ms-font-l">処理ログ:</h3>
+            <div id="log-container"></div>
+        </div>
+    </main>
+</body>
+
+</html>
