@@ -51,13 +51,13 @@ class Summary(BaseModel):
 
 class BulletPointsRequest(BaseModel):
     summaries: List[Summary]
+    title: Optional[str] = None  # タイトルを追加（オプショナル）
 
 class CriteriaResult(BaseModel):
     """評価基準の結果"""
     criteria: EvaluationCriteria
     has_issues: bool
     issues: str
-    target_text: Optional[str] = None
 
 class EvaluationResult(BaseModel):
     target_text: str

@@ -37,7 +37,7 @@
 
 ```json
 {
-  "target_text": "評価対象のサマリーテキスト",
+  "target_text": "評価対象のサマリー",
   "has_issues": true/false,
   "issues": "論理的一貫性の問題点の詳細（問題がある場合）または「問題なし」（問題がない場合）"
 }

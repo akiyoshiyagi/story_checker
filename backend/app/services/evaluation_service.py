@@ -178,8 +178,12 @@ class EvaluationService:
             criteria_result = self._parse_evaluation_response(response, criteria)
             
             # 評価結果の作成
+            target_text = " ".join(all_text)
+            # 末尾の制御文字を削除
+            target_text = target_text.rstrip('\u0005')
+                
             result = EvaluationResult(
-                target_text=criteria_result.target_text if criteria_result.target_text is not None else " ".join(all_text),
+                target_text=target_text,
                 scope=scope,
                 criteria_results=[criteria_result]
             )
@@ -230,8 +234,12 @@ class EvaluationService:
             criteria_result = self._parse_evaluation_response(response, criteria)
             
             # 評価結果の作成
+            target_text = "\n".join(all_summaries)
+            # 末尾の制御文字を削除
+            target_text = target_text.rstrip('\u0005')
+                
             result = EvaluationResult(
-                target_text=criteria_result.target_text if criteria_result.target_text is not None else "\n".join(all_summaries),
+                target_text=target_text,
                 scope=scope,
                 criteria_results=[criteria_result]
             )
@@ -283,8 +291,12 @@ class EvaluationService:
                 criteria_result = self._parse_evaluation_response(response, criteria)
                 
                 # 評価結果の作成
+                target_text = current_summary.content
+                # 末尾の制御文字を削除
+                target_text = target_text.rstrip('\u0005')
+                    
                 result = EvaluationResult(
-                    target_text=criteria_result.target_text if criteria_result.target_text is not None else current_summary.content,
+                    target_text=target_text,
                     scope=scope,
                     criteria_results=[criteria_result]
                 )
@@ -332,7 +344,7 @@ class EvaluationService:
                 
                 # 評価結果の作成
                 result = EvaluationResult(
-                    target_text=criteria_result.target_text if criteria_result.target_text is not None else summary.content,
+                    target_text=summary.content,
                     scope=scope,
                     criteria_results=[criteria_result]
                 )
@@ -380,7 +392,7 @@ class EvaluationService:
                 
                 # 評価結果の作成
                 result = EvaluationResult(
-                    target_text=criteria_result.target_text if criteria_result.target_text is not None else summary.content,
+                    target_text=summary.content,
                     scope=scope,
                     criteria_results=[criteria_result]
                 )
@@ -427,8 +439,12 @@ class EvaluationService:
                     criteria_result = self._parse_evaluation_response(response, criteria)
                     
                     # 評価結果の作成
+                    target_text = message.content
+                    # 末尾の制御文字を削除
+                    target_text = target_text.rstrip('\u0005')
+                        
                     result = EvaluationResult(
-                        target_text=criteria_result.target_text if criteria_result.target_text is not None else message.content,
+                        target_text=target_text,
                         scope=scope,
                         criteria_results=[criteria_result]
                     )
@@ -464,18 +480,11 @@ class EvaluationService:
             if not issues and "details" in result:
                 issues = result.get("details", "")
             
-            # target_textを取得（存在する場合）
-            target_text = None
-            if "target_text" in result:
-                target_text = result.get("target_text")
-                logger.info(f"target_text検出: {target_text[:100] if target_text else 'None'}...")
-            
             # 評価結果を作成
             return CriteriaResult(
                 criteria=criteria,
                 has_issues=has_issues,
-                issues=issues,
-                target_text=target_text
+                issues=issues
             )
         except json.JSONDecodeError as e:
             logger.error(f"評価レスポンスのJSONデコードエラー: {str(e)}")

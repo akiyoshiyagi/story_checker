@@ -76,17 +76,36 @@ async def process_bullet_points(request: BulletPointsRequest):
         
         logger.info(f"処理内容: サマリー {summaries_count}件, メッセージ {total_messages}件, ボディ {total_bodies}件")
         
-        # 評価タスクのリスト
-        evaluation_tasks = []
+        # タイトルの有無をログに出力
+        if request.title:
+            logger.info(f"タイトル: {request.title}")
         
         # 評価サービスを使用して評価を実行
-        results = await evaluation_service.evaluate_document(request)
+        all_results = await evaluation_service.evaluate_document(request)
+        
+        # has_issues=trueの結果のみをフィルタリング
+        filtered_results = []
+        for result in all_results:
+            # criteria_resultsの中に1つでもhas_issues=trueがあれば含める
+            has_issues_criteria = [cr for cr in result.criteria_results if cr.has_issues]
+            if has_issues_criteria:
+                # has_issues=trueの評価結果のみを含める
+                result.criteria_results = has_issues_criteria
+                
+                # ALL_SUMMARIESスコープの場合、タイトルに紐づける
+                if result.scope == EvaluationScope.ALL_SUMMARIES and request.title:
+                    logger.info(f"ALL_SUMMARIESスコープの評価結果をタイトルに紐づけます: {request.title}")
+                    result.target_text = request.title
+                
+                filtered_results.append(result)
+        
+        logger.info(f"評価結果: 全{len(all_results)}件中、問題あり{len(filtered_results)}件")
         
         # レスポンスの作成
         return {
             "status": "success",
             "message": "箇条書きデータの評価が完了しました",
-            "results": results
+            "results": filtered_results
         }
     except Exception as e:
         logger.error(f"処理エラー: {str(e)}")
