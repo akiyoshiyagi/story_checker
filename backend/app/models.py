@@ -10,6 +10,7 @@ class EvaluationScope(str, Enum):
     SUMMARY_WITH_MESSAGES = "summary_with_messages"  # サマリーとその配下のメッセージ群の塊ごとに評価
     MESSAGES_UNDER_SUMMARY = "messages_under_summary"  # サマリー配下のメッセージ群ごとに評価
     MESSAGE_WITH_BODIES = "message_with_bodies"  # メッセージとその配下のボディ群の塊ごとに評価
+    SENTENCE = "sentence"  # 一文ごとに評価
 
 # 評価観点の列挙型
 class EvaluationCriteria(str, Enum):

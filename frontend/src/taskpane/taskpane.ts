@@ -553,9 +553,6 @@ export async function run() {
                 log("評価結果に基づいてコメントを追加しています...");
                 
                 // 各評価結果を処理（コメント追加）
-                // ALL_SUMMARIESの評価結果を評価観点ごとに集めるためのマップ
-                const allSummariesIssuesByType = new Map();
-                
                 for (const result of responseData.results) {
                   // 問題がある評価観点を抽出
                   const issuesCriteria = result.criteria_results.filter(cr => cr.has_issues);
@@ -563,45 +560,29 @@ export async function run() {
                   // 問題がある場合のみコメントを追加
                   if (issuesCriteria.length > 0) {
                     try {
-                      // ALL_SUMMARIESの評価結果は評価観点ごとに集める
-                      if (result.scope === EvaluationScope.ALL_SUMMARIES) {
-                        // 問題のある評価結果を評価観点ごとに集める
-                        for (const issue of issuesCriteria) {
-                          log(`ALL_SUMMARIESの評価結果を収集します: ${getCriteriaName(issue.criteria)}`);
-                          allSummariesIssuesByType.set(issue.criteria, issue);
-                        }
-                        // この評価結果の処理を完了したことを示す
-                        continue;
-                      }
-                      // その他の評価範囲の場合
-                      else {
-                        // 改善された検索関数を使用
-                        const matchedRange = await findTextInDocument(context, result.target_text, allParagraphs);
+                      const matchedRange = await findTextInDocument(context, result.target_text, allParagraphs);
 
-                        log("matchedRangeは");
-                        log(matchedRange);
-                        log("-----");
+                      
+                      if (matchedRange) {
+                        // 問題点をまとめたコメントを作成
+                        const commentText = `【${getScopeName(result.scope)}】\n` + 
+                          issuesCriteria.map(cr => 
+                            `【${getCriteriaName(cr.criteria)}】: ${cr.issues}`
+                          ).join('\n\n');
                         
-                        if (matchedRange) {
-                          // 問題点をまとめたコメントを作成
-                          const commentText = `【${getScopeName(result.scope)}】\n` + 
-                            issuesCriteria.map(cr => 
-                              `【${getCriteriaName(cr.criteria)}】: ${cr.issues}`
-                            ).join('\n\n');
-                          
-                          // コメント追加を試みる（失敗してもエラーにしない）
-                          const commentAdded = await addCommentSafely(context, matchedRange, commentText);
-                          
-                          if (commentAdded) {
-                            log(`評価結果をテキストに追加しました: ${getCriteriaName(issuesCriteria[0].criteria)}`, 'success');
-                          } else {
-                            // コメント追加に失敗した場合はテキスト色を変更
-                            matchedRange.font.color = "red";
-                            await context.sync();
-                            log(`コメント追加に失敗したため、テキスト色を変更しました`, 'error');
-                          }
+                        // コメント追加を試みる（失敗してもエラーにしない）
+                        const commentAdded = await addCommentSafely(context, matchedRange, commentText);
+                        
+                        if (commentAdded) {
+                          log(`評価結果をテキストに追加しました: ${getCriteriaName(issuesCriteria[0].criteria)}`, 'success');
+                        } else {
+                          // コメント追加に失敗した場合はテキスト色を変更
+                          matchedRange.font.color = "red";
+                          await context.sync();
+                          log(`コメント追加に失敗したため、テキスト色を変更しました`, 'error');
                         }
                       }
+                      // }
                     } catch (error) {
                       log(`コメント処理エラー: ${error.message}`, 'error');
                     }
@@ -612,100 +593,6 @@ export async function run() {
                 await context.sync();
                 log("コメント追加処理が完了しました", 'success');
                 
-                // ALL_SUMMARIESの評価結果を評価観点ごとにタイトルに追加
-                if (allSummariesIssuesByType.size > 0 && titleParagraph) {
-                  log(`${allSummariesIssuesByType.size}種類のALL_SUMMARIESの評価結果をタイトルにコメントとして追加します`);
-                  
-                  try {
-                    // タイトルの段落を選択
-                    console.log(`titleParagraph`);
-                    console.log(titleParagraph);
-                    console.log("-----");
-
-                    const range = titleParagraph.getRange();
-                    console.log(`タイトル段落のレンジを取得しました`);
-                    console.log(range);
-                    console.log("-----");
-                    // タイトルをハイライト（コメントが1つでも追加されたら）
-                    let anyCommentAdded = false;
-                    
-                    // 評価観点ごとにコメントを追加
-                    for (const criteria of Array.from(allSummariesIssuesByType.keys())) {
-                      const issue = allSummariesIssuesByType.get(criteria);
-                      // 問題点のコメントを作成
-                      const commentText = `【${getScopeName(EvaluationScope.ALL_SUMMARIES)} - ${getCriteriaName(criteria)}】\n${issue.issues}`;
-                      log(`コメントテキストを作成しました (${getCriteriaName(criteria)}): ${commentText.substring(0, 50)}...`);
-                      
-                      // コメント追加前の状態を確認
-                      log(`コメント追加前の状態確認: range有効=${!!range}, range.text=${await (async () => {
-                        try {
-                          range.load("text");
-                          await context.sync();
-                          return range.text.substring(0, 30) + "...";
-                        } catch (e) {
-                          return `エラー: ${e.message}`;
-                        }
-                      })()}`);
-                      
-                      // コメント追加を試みる（失敗してもエラーにしない）
-                      log(`コメント追加を試みます (${getCriteriaName(criteria)})...`);
-                      try {
-                        const commentAdded = await addCommentSafely(context, range, commentText);
-                        
-                        if (commentAdded) {
-                          log(`ALL_SUMMARIESの評価結果をタイトルに追加しました: ${getCriteriaName(criteria)}`, 'success');
-                          anyCommentAdded = true;
-                        } else {
-                          log(`コメント追加に失敗しました (${getCriteriaName(criteria)})`, 'error');
-                          log(`コメント追加失敗の詳細: commentText長さ=${commentText.length}文字`, 'error');
-                        }
-                      } catch (commentError) {
-                        log(`コメント追加中の例外: ${commentError.message}`, 'error');
-                        if (commentError.stack) {
-                          log(`コメント追加エラースタック: ${commentError.stack.substring(0, 100)}...`, 'error');
-                        }
-                      }
-                      
-                      // 各コメント追加後に同期
-                      try {
-                        await context.sync();
-                        log(`context.sync()が成功しました (${getCriteriaName(criteria)})`);
-                      } catch (syncError) {
-                        log(`context.sync()エラー: ${syncError.message}`, 'error');
-                      }
-                    }
-                    
-                    // コメントが1つでも追加されたらタイトルをハイライト
-                    if (anyCommentAdded) {
-                      log(`タイトルのハイライトを適用します...`);
-                      try {
-                        titleParagraph.font.highlightColor = "yellow";
-                        await context.sync();
-                        log(`タイトルのハイライトを適用しました`);
-                      } catch (highlightError) {
-                        log(`ハイライト適用エラー: ${highlightError.message}`, 'error');
-                      }
-                    } else {
-                      // すべてのコメント追加に失敗した場合はテキスト色を変更
-                      log(`すべてのコメント追加に失敗したため、テキスト色を変更します...`);
-                      try {
-                        titleParagraph.font.color = "red";
-                        await context.sync();
-                        log(`テキスト色を赤に変更しました`, 'error');
-                      } catch (colorError) {
-                        log(`テキスト色変更エラー: ${colorError.message}`, 'error');
-                      }
-                    }
-                  } catch (error) {
-                    log(`ALL_SUMMARIESコメント処理中のエラー: ${error.message}`, 'error');
-                    if (error.stack) {
-                      log(`エラースタック: ${error.stack}`, 'error');
-                    }
-                    // エラーが発生しても処理を続行
-                    titleParagraph.font.color = "purple"; // エラー発生を示す別の色
-                    await context.sync();
-                  }
-                }
                 
                 log("Word文書の更新が完了しました", 'success');
               } catch (error) {
