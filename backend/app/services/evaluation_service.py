@@ -721,4 +721,34 @@ class EvaluationService:
                 criteria=criteria,
                 has_issues=False,
                 issues=f"評価レスポンスの解析中にエラーが発生しました: {str(e)}"
-            ) 
+            )
+
+    def calculate_score(self, all_results: List[EvaluationResult]) -> int:
+        """
+        評価結果に基づいてスコアを計算する
+        
+        Args:
+            all_results: すべての評価結果
+            
+        Returns:
+            スコア（0-100）
+        """
+        # 満点は100点
+        score = 100
+        
+        # 各評価観点ごとに問題があるかどうかを確認
+        criteria_with_issues = set()
+        
+        for result in all_results:
+            for criteria_result in result.criteria_results:
+                if criteria_result.has_issues:
+                    # 問題がある評価観点を記録
+                    criteria_with_issues.add(criteria_result.criteria)
+        
+        # 問題がある評価観点ごとに6点減点
+        deduction = len(criteria_with_issues) * 6
+        
+        # スコアを計算（最低10点）
+        score = max(100 - deduction, 10)
+        
+        return score 

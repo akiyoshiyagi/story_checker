@@ -79,6 +79,7 @@ interface EvaluationResponse {
   status: string;
   message: string;
   results: EvaluationResult[];
+  score: number;  // 評価スコア（0-100）
 }
 
 // シンプルなログ機能
@@ -469,11 +470,37 @@ export async function run() {
             log(`APIレスポンス受信: ${endTime - startTime}ms`, 'success');
             log(`ステータス: ${responseData.status}, メッセージ: ${responseData.message}`);
             
+            // スコアを表示
+            const scoreContainer = document.getElementById("score-container");
+            const scoreDisplay = document.getElementById("score-display");
+            const scoreMessage = document.getElementById("score-message");
+            
+            if (scoreContainer && scoreDisplay && scoreMessage) {
+              scoreContainer.style.display = "block";
+              scoreDisplay.textContent = `${responseData.score}点`;
+              
+              // スコアに応じたメッセージを表示
+              if (responseData.score >= 90) {
+                scoreMessage.textContent = "素晴らしい！ほとんど問題がありません。";
+                scoreDisplay.style.color = "#107C10"; // 緑色
+              } else if (responseData.score >= 70) {
+                scoreMessage.textContent = "良好です。いくつかの改善点があります。";
+                scoreDisplay.style.color = "#0078D4"; // 青色
+              } else if (responseData.score >= 50) {
+                scoreMessage.textContent = "改善の余地があります。";
+                scoreDisplay.style.color = "#FF8C00"; // オレンジ色
+              } else {
+                scoreMessage.textContent = "多くの問題点があります。修正が必要です。";
+                scoreDisplay.style.color = "#E81123"; // 赤色
+              }
+            }
+            
             // 評価結果の概要をログに出力
             const resultsWithIssues = responseData.results.filter(r => 
               r.criteria_results.some(cr => cr.has_issues)
             );
             log(`評価結果: ${responseData.results.length}件中${resultsWithIssues.length}件に問題あり`);
+            log(`評価スコア: ${responseData.score}点`);
             
             // 問題がある場合は詳細をログに出力
             if (resultsWithIssues.length > 0) {

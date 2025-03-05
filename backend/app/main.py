@@ -83,6 +83,10 @@ async def process_bullet_points(request: BulletPointsRequest):
         # 評価サービスを使用して評価を実行
         all_results = await evaluation_service.evaluate_document(request)
         
+        # スコアを計算
+        score = evaluation_service.calculate_score(all_results)
+        logger.info(f"評価スコア: {score}点")
+        
         # has_issues=trueの結果のみをフィルタリング
         filtered_results = []
         for result in all_results:
@@ -104,8 +108,9 @@ async def process_bullet_points(request: BulletPointsRequest):
         # レスポンスの作成
         return {
             "status": "success",
-            "message": "箇条書きデータの評価が完了しました",
-            "results": filtered_results
+            "message": f"箇条書きデータの評価が完了しました。評価スコア: {score}点",
+            "results": filtered_results,
+            "score": score
         }
     except Exception as e:
         logger.error(f"処理エラー: {str(e)}")

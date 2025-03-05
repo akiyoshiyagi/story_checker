@@ -68,4 +68,5 @@ class EvaluationResult(BaseModel):
 class EvaluationResponse(BaseModel):
     status: str
     message: str
-    results: List[EvaluationResult] 
+    results: List[EvaluationResult]
+    score: int = 100  # デフォルトは満点の100点 
