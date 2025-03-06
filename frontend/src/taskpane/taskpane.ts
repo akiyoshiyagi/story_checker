@@ -112,14 +112,31 @@ function log(message: string, type: 'info' | 'error' | 'success' | 'debug' = 'in
 // Office.jsの初期化
 Office.onReady((info) => {
   if (info.host === Office.HostType.Word) {
-    // アプリケーション本体を表示
+    document.getElementById("app-body").style.display = "flex";
     document.getElementById("sideload-msg").style.display = "none";
-    document.getElementById("app-body").style.display = "block";
-    
-    // ボタンにイベントリスナーを設定
+
+    // 実行ボタンのイベントリスナーを設定
     document.getElementById("run").addEventListener("click", run);
-    
-    // ログ出力
+
+    // スコープボタンのイベントリスナーを設定
+    setupScopeButtons();
+
+    // すべて表示ボタンのイベントリスナーを設定
+    const showAllButton = document.getElementById("show-all");
+    if (showAllButton) {
+      showAllButton.addEventListener("click", async () => {
+        log("すべてのコメントを表示します", 'info');
+        
+        // アクティブなスコープをクリア
+        document.querySelectorAll('.scope-button').forEach(btn => {
+          btn.classList.remove('active');
+        });
+        
+        // すべてのコメントを表示
+        await showAllComments();
+      });
+    }
+
     log("アプリケーションが初期化されました", 'info');
   }
 });
@@ -143,9 +160,9 @@ async function findTextInDocument(context: Word.RequestContext, searchText: stri
   // 検索テキストが空の場合はnullを返す
   if (!searchText || searchText.trim() === "") {
     log("検索テキストが空です", 'error');
-    return null;
-  }
-  
+      return null;
+    }
+    
   // 検索テキストが長すぎる場合は短くする
   const maxSearchLength = 255;
   let effectiveSearchText = searchText;
@@ -231,6 +248,7 @@ function extractKeywords(text: string): string[] {
 let evaluationResults: EvaluationResult[] = [];
 let activeScope: EvaluationScope | null = null;
 let commentRanges: { [key: string]: Word.Range } = {};
+let lastCheckResults: EvaluationResponse | null = null; // チェック実行結果を保存する変数
 
 export async function run() {
   try {
@@ -298,15 +316,19 @@ export async function run() {
             log(`APIレスポンス受信: ${endTime - startTime}ms`, 'success');
             log(`ステータス: ${responseData.status}, メッセージ: ${responseData.message}`);
             
-            // スコアを表示
-            updateScore(responseData.score);
+            // チェック実行結果を保存
+            lastCheckResults = responseData;
+            
+            // スコアを表示（未定義の場合はデフォルト値100を使用）
+            const score = responseData.score !== undefined ? responseData.score : 100;
+            updateScore(score);
             
             // 評価結果の概要をログに出力
             const resultsWithIssues = responseData.results.filter(r => 
               r.criteria_results.some(cr => cr.has_issues)
             );
             log(`評価結果: ${responseData.results.length}件中${resultsWithIssues.length}件に問題あり`);
-            log(`評価スコア: ${responseData.score}点`);
+            log(`評価スコア: ${score}点`);
             
             // 評価結果をグローバル変数に保存
             evaluationResults = responseData.results;
@@ -339,79 +361,8 @@ export async function run() {
                 // コメントをすべて削除
                 await removeAllComments(context);
                 
-                // 各評価結果を処理
-                log("評価結果に基づいてテキストをハイライトしています...");
-                
-                // コメント範囲を保存するオブジェクトをクリア
-                commentRanges = {};
-                
-                for (const result of responseData.results) {
-                  // 問題がある評価観点を抽出
-                  const issuesCriteria = result.criteria_results.filter(cr => cr.has_issues);
-                  
-                  // 問題がある場合のみハイライトを追加
-                  if (issuesCriteria.length > 0) {
-                    try {
-                      // ALL_SUMMARIESの評価結果はタイトルにハイライト
-                      if (result.scope === EvaluationScope.ALL_SUMMARIES && titleParagraph) {
-                        log(`ALL_SUMMARIESの評価結果をタイトルにハイライトします`);
-                        
-                        // タイトルをハイライト
-                        titleParagraph.font.highlightColor = "yellow";
-                        
-                        // コメントテキストを作成
-                        const commentText = issuesCriteria.map(cr => 
-                          `【${getCriteriaName(cr.criteria)}】: ${cr.issues}`
-                        ).join('\n\n');
-                        
-                        // コメント追加を試みる
-                        const commentAdded = await addCommentSafely(context, titleParagraph.getRange(), commentText);
-                        
-                        if (commentAdded) {
-                          log(`評価結果をタイトルに追加しました`, 'success');
-                          // コメント範囲を保存
-                          commentRanges[`${result.scope}_${issuesCriteria[0].criteria}`] = titleParagraph.getRange();
-                        }
-                      }
-                      // その他の評価範囲の場合
-                      else {
-                        // 改善された検索関数を使用
-                        const matchedRange = await findTextInDocument(context, result.target_text, allParagraphs);
-                        
-                        if (matchedRange) {
-                          // ハイライト
-                          matchedRange.font.highlightColor = "yellow";
-                          await context.sync();
-                          
-                          // コメントテキストを作成
-                          const commentText = issuesCriteria.map(cr => 
-                            `【${getCriteriaName(cr.criteria)}】: ${cr.issues}`
-                          ).join('\n\n');
-                          
-                          // コメント追加を試みる
-                          const commentAdded = await addCommentSafely(context, matchedRange, commentText);
-                          
-                          if (commentAdded) {
-                            log(`評価結果をテキストに追加しました: ${getCriteriaName(issuesCriteria[0].criteria)}`, 'success');
-                            // コメント範囲を保存
-                            commentRanges[`${result.scope}_${issuesCriteria[0].criteria}`] = matchedRange;
-                          } else {
-                            // コメント追加に失敗した場合はテキスト色を変更
-                            matchedRange.font.color = "red";
-                            await context.sync();
-                            log(`コメント追加に失敗したため、テキスト色を変更しました`, 'error');
-                          }
-                        }
-                      }
-                    } catch (error) {
-                      log(`コメント処理エラー: ${error.message}`, 'error');
-                    }
-                  }
-                }
-                
-                // 変更を同期
-                await context.sync();
-                log("コメント追加処理が完了しました", 'success');
+                // すべてのコメントを表示
+                await showAllComments();
                 
                 // スコープボタンのイベントリスナーを設定
                 setupScopeButtons();
@@ -453,6 +404,12 @@ function updateScore(score: number) {
   const scoreMessage = document.getElementById("score-message");
   
   if (scoreDisplay && scoreMessage) {
+    // スコアが未定義または無効な場合は0として扱う
+    if (score === undefined || score === null || isNaN(score)) {
+      log("スコアが未定義または無効です。デフォルト値を使用します。", 'error');
+      score = 0;
+    }
+    
     scoreDisplay.textContent = `${score}`;
     
     // スコアに応じたメッセージと色を設定
@@ -508,41 +465,58 @@ function updateScopeStatus(results: EvaluationResult[]) {
 
 // スコープボタンのイベントリスナーを設定する関数
 function setupScopeButtons() {
-  const scopeList = document.getElementById("scope-list");
-  if (!scopeList) return;
+  const scopeButtons = document.querySelectorAll('.scope-button');
   
-  // すべてのスコープボタンにイベントリスナーを設定
-  const scopeItems = scopeList.querySelectorAll(".evaluation-item");
-  scopeItems.forEach(item => {
-    item.addEventListener("click", async () => {
-      const scope = item.getAttribute("data-scope") as EvaluationScope;
-      
-      // アクティブなスコープを更新
-      if (activeScope === scope) {
-        // 同じスコープをクリックした場合は、すべてのコメントを表示
-        activeScope = null;
-        item.classList.remove("active");
-        await showAllComments();
-      } else {
-        // 別のスコープをクリックした場合は、そのスコープのコメントのみを表示
-        activeScope = scope;
+  scopeButtons.forEach(button => {
+    button.addEventListener('click', async () => {
+      const scopeAttr = button.getAttribute('data-scope');
+      if (scopeAttr) {
+        log(`スコープ ${scopeAttr} がクリックされました`, 'info');
         
-        // アクティブクラスを更新
-        scopeItems.forEach(i => i.classList.remove("active"));
-        item.classList.add("active");
+        // 文字列からEvaluationScopeに変換
+        const scope = scopeAttr as EvaluationScope;
         
+        // アクティブなスコープを更新
+        document.querySelectorAll('.scope-button').forEach(btn => {
+          btn.classList.remove('active');
+        });
+        button.classList.add('active');
+        
+        // 選択されたスコープのコメントのみを表示
         await filterCommentsByScope(scope);
       }
     });
   });
+  
+  // すべて表示ボタンのイベントリスナーを設定
+  const showAllButton = document.getElementById("show-all");
+  if (showAllButton) {
+    showAllButton.addEventListener("click", async () => {
+      log("すべてのコメントを表示します", 'info');
+      
+      // アクティブなスコープをクリア
+      document.querySelectorAll('.scope-button').forEach(btn => {
+        btn.classList.remove('active');
+      });
+      
+      // すべてのコメントを表示
+      await showAllComments();
+    });
+  }
 }
 
 // すべてのコメントを表示する関数
 async function showAllComments() {
+  if (!evaluationResults || evaluationResults.length === 0) {
+    log("評価結果がありません。先にチェックを実行してください。", 'error');
+    return;
+  }
+
+  log("すべてのコメントを表示します", 'info');
+  
   await Word.run(async (context) => {
     try {
-      // Word 2016以降ではコメントを直接操作できないため、
-      // 代わりにすべてのコメントを再作成する
+      // すべてのコメントを削除
       await removeAllComments(context);
       
       // 評価結果からコメントを再作成
@@ -550,29 +524,74 @@ async function showAllComments() {
       allParagraphs.load(["text", "font"]);
       await context.sync();
       
-      for (const result of evaluationResults) {
-        if (result.criteria_results.some(cr => cr.has_issues)) {
-          const issuesCriteria = result.criteria_results.filter(cr => cr.has_issues);
+      // 問題がある評価結果のみをフィルタリング
+      const resultsWithIssues = evaluationResults.filter(result => 
+        result.criteria_results.some(cr => cr.has_issues)
+      );
+      
+      log(`問題がある評価結果は ${resultsWithIssues.length} 件あります`, 'info');
+      
+      if (resultsWithIssues.length === 0) {
+        log("問題がある評価結果はありません", 'info');
+        return;
+      }
+      
+      // コメント範囲を保存するオブジェクトをクリア
+      commentRanges = {};
+      
+      // 各評価結果に対してコメントを追加
+      for (const result of resultsWithIssues) {
+        const issuesCriteria = result.criteria_results.filter(cr => cr.has_issues);
+        
+        // 特別なケース: ALL_SUMMARIESスコープでタイトルに関連する場合
+        if (result.scope === EvaluationScope.ALL_SUMMARIES && result.target_text === document.title) {
+          const titleParagraph = context.document.body.paragraphs.getFirst();
+          titleParagraph.load("text");
+          await context.sync();
           
-          const matchedRange = await findTextInDocument(context, result.target_text, allParagraphs);
+          // タイトルをハイライト
+          titleParagraph.font.highlightColor = "yellow";
           
-          if (matchedRange) {
-            // ハイライト
-            matchedRange.font.highlightColor = "yellow";
-            
-            // コメントテキストを作成
-            const commentText = issuesCriteria.map(cr => 
-              `【${getCriteriaName(cr.criteria)}】: ${cr.issues}`
-            ).join('\n\n');
-            
-            // コメント追加
-            await addCommentSafely(context, matchedRange, commentText);
+          // コメントテキストを作成
+          const commentText = `【${getScopeName(result.scope)}】\n` + issuesCriteria.map(cr => 
+            `【${getCriteriaName(cr.criteria)}】: ${cr.issues}`
+          ).join('\n\n');
+          
+          // コメント追加
+          const commentAdded = await addCommentSafely(context, titleParagraph.getRange(), commentText);
+          if (commentAdded) {
+            // コメント範囲を保存
+            commentRanges[`${result.scope}_${issuesCriteria[0].criteria}`] = titleParagraph.getRange();
           }
+          continue;
+        }
+        
+        // 通常のケース: テキストを検索してコメントを追加
+        const matchedRange = await findTextInDocument(context, result.target_text, allParagraphs);
+        
+        if (matchedRange) {
+          // ハイライト
+          matchedRange.font.highlightColor = "yellow";
+          
+          // コメントテキストを作成（スコープ名を含める）
+          const commentText = `【${getScopeName(result.scope)}】\n` + issuesCriteria.map(cr => 
+            `【${getCriteriaName(cr.criteria)}】: ${cr.issues}`
+          ).join('\n\n');
+          
+          // コメント追加
+          const commentAdded = await addCommentSafely(context, matchedRange, commentText);
+          if (commentAdded) {
+            log(`"${result.target_text.substring(0, 30)}..." にコメントを追加しました`, 'success');
+            // コメント範囲を保存
+            commentRanges[`${result.scope}_${issuesCriteria[0].criteria}`] = matchedRange;
+          }
+        } else {
+          log(`"${result.target_text.substring(0, 30)}..." が見つかりませんでした`, 'error');
         }
       }
       
       await context.sync();
-      log("すべてのコメントを表示しました", 'info');
+      log("すべてのコメントを表示しました", 'success');
     } catch (error) {
       log(`コメント表示エラー: ${error.message}`, 'error');
     }
@@ -581,6 +600,14 @@ async function showAllComments() {
 
 // スコープに基づいてコメントをフィルタリングする関数
 async function filterCommentsByScope(scope: EvaluationScope) {
+  if (!evaluationResults || evaluationResults.length === 0) {
+    log("評価結果がありません。先にチェックを実行してください。", 'error');
+    return;
+  }
+
+  log(`スコープ ${getScopeName(scope)} のコメントをフィルタリングします`, 'info');
+  log(`スコープ ${scope} のコメントをフィルタリングします`, 'info');
+  
   await Word.run(async (context) => {
     try {
       // すべてのコメントを削除
@@ -591,29 +618,96 @@ async function filterCommentsByScope(scope: EvaluationScope) {
       allParagraphs.load(["text", "font"]);
       await context.sync();
       
-      for (const result of evaluationResults) {
-        if (result.scope === scope && result.criteria_results.some(cr => cr.has_issues)) {
-          const issuesCriteria = result.criteria_results.filter(cr => cr.has_issues);
+      console.log("evaluationResults");
+      console.log(evaluationResults);
+
+      // 評価結果の詳細な構造を確認
+      console.log("評価結果の詳細:");
+      evaluationResults.forEach((result, index) => {
+        console.log(`結果 ${index}:`);
+        console.log(`- スコープ: ${result.scope}`);
+        console.log(`- 対象テキスト: ${result.target_text.substring(0, 30)}...`);
+        console.log(`- 評価基準結果数: ${result.criteria_results.length}`);
+        console.log(`- 問題あり: ${result.criteria_results.some(cr => cr.has_issues)}`);
+      });
+
+      console.log("scope（小文字）:");
+      console.log(scope.toLowerCase());
+      
+      // 文字列に変換して比較
+      const filteredResults = evaluationResults.filter(result => 
+        result.scope === scope.toLowerCase() && result.criteria_results.some(cr => cr.has_issues)
+      );
+
+      console.log("filteredResults");
+      console.log(filteredResults);
+      
+      log(`スコープ ${getScopeName(scope)} に関連する問題は ${filteredResults.length} 件あります`, 'info');
+      
+      if (filteredResults.length === 0) {
+        log(`スコープ ${getScopeName(scope)} に関連する問題はありません`, 'info');
+        return;
+      }
+      
+      // コメント範囲を保存するオブジェクトをクリア
+      commentRanges = {};
+      
+      // 各評価結果に対してコメントを追加
+      for (const result of filteredResults) {
+        const issuesCriteria = result.criteria_results.filter(cr => cr.has_issues);
+        
+        // 特別なケース: ALL_SUMMARIESスコープでタイトルに関連する場合
+        if (scope === EvaluationScope.ALL_SUMMARIES && result.target_text === document.title) {
+          const titleParagraph = context.document.body.paragraphs.getFirst();
+          titleParagraph.load("text");
+          await context.sync();
           
-          const matchedRange = await findTextInDocument(context, result.target_text, allParagraphs);
+          // タイトルをハイライト
+          titleParagraph.font.highlightColor = "yellow";
           
-          if (matchedRange) {
-            // ハイライト
-            matchedRange.font.highlightColor = "yellow";
-            
-            // コメントテキストを作成
-            const commentText = issuesCriteria.map(cr => 
-              `【${getCriteriaName(cr.criteria)}】: ${cr.issues}`
-            ).join('\n\n');
-            
-            // コメント追加
-            await addCommentSafely(context, matchedRange, commentText);
+          // コメントテキストを作成
+          const commentText = `【${getScopeName(result.scope)}】\n` + issuesCriteria.map(cr => 
+            `【${getCriteriaName(cr.criteria)}】: ${cr.issues}`
+          ).join('\n\n');
+          
+          // コメント追加
+          const commentAdded = await addCommentSafely(context, titleParagraph.getRange(), commentText);
+          if (commentAdded) {
+            // コメント範囲を保存
+            commentRanges[`${result.scope}_${issuesCriteria[0].criteria}`] = titleParagraph.getRange();
           }
+          continue;
+        }
+        
+        // 通常のケース: テキストを検索してコメントを追加
+        const matchedRange = await findTextInDocument(context, result.target_text, allParagraphs);
+        
+        if (matchedRange) {
+          // ハイライト
+          matchedRange.font.highlightColor = "yellow";
+          
+          // コメントテキストを作成（スコープ名を含める）
+          const commentText = `【${getScopeName(result.scope)}】\n` + issuesCriteria.map(cr => 
+            `【${getCriteriaName(cr.criteria)}】: ${cr.issues}`
+          ).join('\n\n');
+          
+          // コメント追加
+          const commentAdded = await addCommentSafely(context, matchedRange, commentText);
+          if (commentAdded) {
+            log(`"${result.target_text.substring(0, 30)}..." にコメントを追加しました`, 'success');
+            // コメント範囲を保存
+            commentRanges[`${result.scope}_${issuesCriteria[0].criteria}`] = matchedRange;
+          }
+        } else {
+          log(`"${result.target_text.substring(0, 30)}..." が見つかりませんでした`, 'error');
         }
       }
       
       await context.sync();
-      log(`${getScopeName(scope)}のコメントのみを表示しました`, 'info');
+      log(`${getScopeName(scope)}のコメントのみを表示しました`, 'success');
+      
+      // アクティブなスコープを更新
+      activeScope = scope;
     } catch (error) {
       log(`コメントフィルタリングエラー: ${error.message}`, 'error');
     }
@@ -673,12 +767,12 @@ function getCriteriaName(criteria: EvaluationCriteria): string {
 // 評価範囲の名前を取得する
 function getScopeName(scope: EvaluationScope): string {
   const scopeNames = {
-    [EvaluationScope.DOCUMENT_WIDE]: "文書全体",
-    [EvaluationScope.ALL_SUMMARIES]: "サマリー全体",
-    [EvaluationScope.SUMMARY_PAIRS]: "サマリー内の文のペア",
+    [EvaluationScope.DOCUMENT_WIDE]: "ドキュメント全体",
+    [EvaluationScope.ALL_SUMMARIES]: "すべてのサマリー",
+    [EvaluationScope.SUMMARY_PAIRS]: "サマリーペア",
     [EvaluationScope.SUMMARY_WITH_MESSAGES]: "サマリーとメッセージ",
-    [EvaluationScope.MESSAGES_UNDER_SUMMARY]: "サマリー配下のメッセージ群",
-    [EvaluationScope.MESSAGE_WITH_BODIES]: "メッセージとボディ"
+    [EvaluationScope.MESSAGES_UNDER_SUMMARY]: "サマリー下のメッセージ",
+    [EvaluationScope.MESSAGE_WITH_BODIES]: "メッセージと本文"
   };
   
   return scopeNames[scope] || scope;

@@ -66,6 +66,12 @@
             align-items: center;
             margin: 5px 0;
             cursor: pointer;
+            padding: 5px;
+            border-radius: 4px;
+            transition: all 0.3s ease;
+        }
+        .evaluation-item:hover {
+            background-color: #f0f0f0;
         }
         .evaluation-item .label-ok {
             background-color: #D32F2F; /* 赤 */
@@ -94,6 +100,17 @@
             color: white;
             font-weight: bold;
             border-radius: 4px;
+            transition: background-color 0.3s ease;
+            margin: 0 5px;
+        }
+        .check-button button:hover {
+            background-color: #7B9FE0;
+        }
+        #show-all {
+            background-color: #4CAF50;
+        }
+        #show-all:hover {
+            background-color: #3E8E41;
         }
         #log-container {
             margin-top: 20px;
@@ -126,6 +143,7 @@
         }
         .active {
             border: 2px solid #0078D4;
+            background-color: #E6F2FF;
         }
         #api-url-container {
             padding: 10px;
@@ -151,34 +169,35 @@
             
             <div class="evaluation-title">評価観点</div>
             <div class="evaluation-list" id="scope-list">
-                <div class="evaluation-item" data-scope="DOCUMENT_WIDE">
+                <div class="evaluation-item scope-button" data-scope="DOCUMENT_WIDE">
                     <div class="label-ng" id="DOCUMENT_WIDE-status">NG</div>
-                    <div>DOCUMENT_WIDE</div>
+                    <div>ドキュメント全体</div>
                 </div>
-                <div class="evaluation-item" data-scope="ALL_SUMMARIES">
+                <div class="evaluation-item scope-button" data-scope="ALL_SUMMARIES">
                     <div class="label-ng" id="ALL_SUMMARIES-status">NG</div>
-                    <div>ALL_SUMMARIES</div>
+                    <div>すべてのサマリー</div>
                 </div>
-                <div class="evaluation-item" data-scope="SUMMARY_PAIRS">
+                <div class="evaluation-item scope-button" data-scope="SUMMARY_PAIRS">
                     <div class="label-ng" id="SUMMARY_PAIRS-status">NG</div>
-                    <div>SUMMARY_PAIRS</div>
+                    <div>サマリーペア</div>
                 </div>
-                <div class="evaluation-item" data-scope="SUMMARY_WITH_MESSAGES">
+                <div class="evaluation-item scope-button" data-scope="SUMMARY_WITH_MESSAGES">
                     <div class="label-ng" id="SUMMARY_WITH_MESSAGES-status">NG</div>
-                    <div>SUMMARY_WITH_MESSAGES</div>
+                    <div>サマリーとメッセージ</div>
                 </div>
-                <div class="evaluation-item" data-scope="MESSAGES_UNDER_SUMMARY">
+                <div class="evaluation-item scope-button" data-scope="MESSAGES_UNDER_SUMMARY">
                     <div class="label-ng" id="MESSAGES_UNDER_SUMMARY-status">NG</div>
-                    <div>MESSAGES_UNDER_SUMMARY</div>
+                    <div>サマリー下のメッセージ</div>
                 </div>
-                <div class="evaluation-item" data-scope="MESSAGE_WITH_BODIES">
+                <div class="evaluation-item scope-button" data-scope="MESSAGE_WITH_BODIES">
                     <div class="label-ng" id="MESSAGE_WITH_BODIES-status">NG</div>
-                    <div>MESSAGE_WITH_BODIES</div>
+                    <div>メッセージと本文</div>
                 </div>
             </div>
             
             <div class="check-button">
                 <button id="run">チェック実行</button>
+                <button id="show-all">すべて表示</button>
             </div>
             
             <div id="api-url-container" class="ms-TextField">
