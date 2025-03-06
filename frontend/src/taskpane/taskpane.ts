@@ -323,7 +323,7 @@ export async function run() {
             console.log(responseData);
             console.log("評価結果:");
             console.log(responseData.results);
-            console.log("スコア:", responseData.score, "型:", typeof responseData.score);
+            console.log("スコア:", responseData.score);
             
             // チェック実行結果を保存
             lastCheckResults = responseData;
@@ -385,8 +385,8 @@ export async function run() {
                 // コメントをすべて削除
                 await removeAllComments(context);
                 
-                // すべてのコメントを表示
-                await showAllComments();
+                // 優先順位が最も高いNGカテゴリーのコメントのみを表示
+                await showHighestPriorityComments();
                 
                 // スコープボタンのイベントリスナーを設定
                 setupScopeButtons();
@@ -504,7 +504,6 @@ function setupScopeButtons() {
       const scopeAttr = button.getAttribute('data-scope');
       if (scopeAttr) {
         log(`スコープ ${scopeAttr} がクリックされました`, 'info');
-        console.log(`クリックされたスコープ属性: ${scopeAttr}`);
         
         // 文字列からEvaluationScopeに変換
         let scope: EvaluationScope;
@@ -535,8 +534,6 @@ function setupScopeButtons() {
         }
         
         console.log(`変換後のスコープ: ${scope}, 型: ${typeof scope}`);
-        console.log(`EvaluationScope.DOCUMENT_WIDE = ${EvaluationScope.DOCUMENT_WIDE}`);
-        console.log(`EvaluationScope.ALL_SUMMARIES = ${EvaluationScope.ALL_SUMMARIES}`);
         
         // アクティブなスコープを更新
         document.querySelectorAll('.scope-button').forEach(btn => {
@@ -990,4 +987,73 @@ async function buildBulletPointsData(context: Word.RequestContext, titleText: st
   console.log("構築された箇条書きデータ:", bulletPointsData);
   
   return bulletPointsData;
+}
+
+// 優先順位が最も高いNGカテゴリーのコメントのみを表示する関数
+async function showHighestPriorityComments() {
+  if (!evaluationResults || evaluationResults.length === 0) {
+    log("評価結果がありません。先にチェックを実行してください。", 'error');
+    return;
+  }
+
+  log("優先順位が最も高いNGカテゴリーのコメントを表示します", 'info');
+  
+  // スコープの優先順位を定義（インデックスが小さいほど優先順位が高い）
+  const scopePriority = [
+    EvaluationScope.DOCUMENT_WIDE,
+    EvaluationScope.ALL_SUMMARIES,
+    EvaluationScope.SUMMARY_PAIRS,
+    EvaluationScope.SUMMARY_WITH_MESSAGES,
+    EvaluationScope.MESSAGES_UNDER_SUMMARY,
+    EvaluationScope.MESSAGE_WITH_BODIES
+  ];
+  
+  // 各スコープに問題があるかどうかを確認
+  const scopeHasIssues: { [key: string]: boolean } = {};
+  for (const scope of scopePriority) {
+    // スコープの比較（文字列の場合とEnum値の場合の両方に対応）
+    scopeHasIssues[scope] = evaluationResults.some(result => {
+      const resultScope = result.scope;
+      const isMatchingScope = 
+        resultScope === scope || 
+        resultScope === scope.toString() || 
+        resultScope.toString() === scope.toString();
+      
+      return isMatchingScope && result.criteria_results.some(cr => cr.has_issues);
+    });
+  }
+  
+  console.log("各スコープの問題の有無:", scopeHasIssues);
+  
+  // 優先順位が最も高いNGカテゴリーを特定
+  let highestPriorityScope: EvaluationScope | null = null;
+  for (const scope of scopePriority) {
+    if (scopeHasIssues[scope]) {
+      highestPriorityScope = scope;
+      break;
+    }
+  }
+  
+  // 優先順位が最も高いNGカテゴリーが見つかった場合
+  if (highestPriorityScope) {
+    log(`優先順位が最も高いNGカテゴリー: ${getScopeName(highestPriorityScope)}`, 'info');
+    
+    // 該当するスコープのボタンをアクティブにする
+    document.querySelectorAll('.scope-button').forEach(btn => {
+      btn.classList.remove('active');
+      const btnScope = btn.getAttribute('data-scope');
+      if (btnScope && (
+          btnScope === highestPriorityScope || 
+          btnScope === highestPriorityScope.toString()
+        )) {
+        btn.classList.add('active');
+      }
+    });
+    
+    // 該当するスコープのコメントのみを表示
+    await filterCommentsByScope(highestPriorityScope);
+  } else {
+    log("NGカテゴリーが見つかりませんでした。すべてのコメントを表示します。", 'info');
+    await showAllComments();
+  }
 }

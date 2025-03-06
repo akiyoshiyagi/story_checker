@@ -234,4 +234,4 @@ async def process_bullet_points(request: BulletPointsRequest):
 
 @app.get("/")
 async def root():
-    return {"message": "Word箇条書き処理APIへようこそ"} 
+    return {"message": "Wordaaaa箇条書き!!処理APIへようこそ"} 
