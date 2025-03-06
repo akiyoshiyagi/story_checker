@@ -82,31 +82,28 @@ interface EvaluationResponse {
   score: number;  // 評価スコア（0-100）
 }
 
-// シンプルなログ機能
+// ログを出力する関数
 function log(message: string, type: 'info' | 'error' | 'success' | 'debug' = 'info') {
-  const logContainer = document.getElementById("log-container");
-  if (!logContainer) return;
-  
+  // 現在の時刻を取得
   const now = new Date();
   const timeString = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
   
-  const logEntry = document.createElement("div");
-  logEntry.className = `log-entry log-${type}`;
-  
-  const timeSpan = document.createElement("span");
-  timeSpan.className = "log-time";
-  timeSpan.textContent = `[${timeString}]`;
-  
-  const messageSpan = document.createElement("span");
-  messageSpan.className = `log-${type}`;
-  messageSpan.textContent = message;
-  
-  logEntry.appendChild(timeSpan);
-  logEntry.appendChild(document.createTextNode(" "));
-  logEntry.appendChild(messageSpan);
-  
-  logContainer.appendChild(logEntry);
-  logContainer.scrollTop = logContainer.scrollHeight;
+  // コンソールに出力
+  switch (type) {
+    case 'error':
+      console.error(`[${timeString}] ${message}`);
+      break;
+    case 'success':
+      console.log(`[${timeString}] ✓ ${message}`);
+      break;
+    case 'debug':
+      console.debug(`[${timeString}] ${message}`);
+      break;
+    case 'info':
+    default:
+      console.log(`[${timeString}] ${message}`);
+      break;
+  }
 }
 
 // Office.jsの初期化

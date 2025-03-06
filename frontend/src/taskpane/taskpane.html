@@ -15,6 +15,7 @@
 
     <!-- For more information on Fluent UI, visit https://developer.microsoft.com/fluentui#/. -->
     <link rel="stylesheet" href="https://res-1.cdn.office.net/files/fabric-cdn-prod_20230815.002/office-ui-fabric-core/11.1.0/css/fabric.min.css"/>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
 
     <!-- Template styles -->
     <link href="taskpane.css" rel="stylesheet" type="text/css" />
@@ -22,128 +23,139 @@
     <style>
         body {
             margin: 0;
-            font-family: sans-serif;
+            font-family: 'Noto Sans JP', sans-serif;
+            background-color: #f8f9fa;
+            color: #333;
         }
         .container {
             width: 100%;
-            max-width: 300px;
+            max-width: 320px;
             margin: 0 auto;
-            border: 1px solid #ccc;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            background-color: #fff;
+            overflow: hidden;
         }
         .header {
-            background-color: #606060;
+            background: linear-gradient(135deg, #4568dc, #b06ab3);
             color: #ffffff;
-            padding: 10px;
-            font-weight: bold;
+            padding: 16px;
+            font-weight: 700;
             text-align: center;
+            font-size: 18px;
+            letter-spacing: 0.5px;
         }
         .score-section {
             text-align: center;
-            padding: 10px;
+            padding: 20px;
+            background-color: #fff;
+            border-bottom: 1px solid #eee;
         }
         .score-section .score-label {
-            font-size: 24px;
+            font-size: 16px;
             margin-bottom: 8px;
+            color: #666;
+            font-weight: 500;
         }
         .score-section .score-value {
             font-size: 48px;
-            font-weight: bold;
+            font-weight: 700;
             margin-bottom: 8px;
+            color: #4568dc;
+            line-height: 1;
         }
         .score-section .score-comment {
             margin: 0;
+            color: #666;
+            font-size: 14px;
         }
         .evaluation-title {
-            font-weight: bold;
-            padding: 0 10px;
-            margin-top: 8px;
+            font-weight: 700;
+            padding: 16px 16px 8px;
+            color: #333;
+            font-size: 16px;
+            background-color: #f8f9fa;
         }
         .evaluation-list {
-            padding: 0 10px 10px 10px;
+            padding: 0 16px 16px;
+            background-color: #f8f9fa;
         }
         .evaluation-item {
             display: flex;
             align-items: center;
-            margin: 5px 0;
+            margin: 8px 0;
             cursor: pointer;
-            padding: 5px;
-            border-radius: 4px;
+            padding: 10px;
+            border-radius: 6px;
             transition: all 0.3s ease;
+            background-color: #fff;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
         }
         .evaluation-item:hover {
-            background-color: #f0f0f0;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
         }
         .evaluation-item .label-ok {
-            background-color: #D32F2F; /* 赤 */
+            background-color: #D32F2F;
             color: #ffffff;
-            padding: 2px 6px;
-            margin-right: 6px;
-            width: 30px;
+            padding: 4px 8px;
+            margin-right: 12px;
+            width: 36px;
             text-align: center;
+            border-radius: 4px;
+            font-weight: 500;
+            font-size: 12px;
         }
         .evaluation-item .label-ng {
-            background-color: #BDBDBD; /* グレー */
-            padding: 2px 6px;
-            margin-right: 6px;
-            width: 30px;
+            background-color: #BDBDBD;
+            color: #333;
+            padding: 4px 8px;
+            margin-right: 12px;
+            width: 36px;
             text-align: center;
+            border-radius: 4px;
+            font-weight: 500;
+            font-size: 12px;
+        }
+        .evaluation-item-text {
+            font-size: 14px;
+            font-weight: 500;
         }
         .check-button {
             text-align: center;
-            padding: 10px;
+            padding: 16px;
+            background-color: #fff;
+            border-top: 1px solid #eee;
         }
         .check-button button {
-            padding: 6px 12px;
+            padding: 10px 16px;
             cursor: pointer;
-            background-color: #92B4F3;
+            background-color: #4568dc;
             border: none;
             color: white;
-            font-weight: bold;
-            border-radius: 4px;
-            transition: background-color 0.3s ease;
-            margin: 0 5px;
+            font-weight: 500;
+            border-radius: 6px;
+            transition: all 0.3s ease;
+            margin: 0 8px;
+            font-size: 14px;
+            box-shadow: 0 2px 4px rgba(69, 104, 220, 0.3);
         }
         .check-button button:hover {
-            background-color: #7B9FE0;
+            background-color: #3a57b8;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(69, 104, 220, 0.4);
         }
         #show-all {
             background-color: #4CAF50;
+            box-shadow: 0 2px 4px rgba(76, 175, 80, 0.3);
         }
         #show-all:hover {
             background-color: #3E8E41;
-        }
-        #log-container {
-            margin-top: 20px;
-            max-height: 200px;
-            overflow-y: auto;
-            border: 1px solid #ccc;
-            padding: 10px;
-            font-family: monospace;
-            font-size: 12px;
-            background-color: #f9f9f9;
-            display: block;
-        }
-        .log-entry {
-            margin-bottom: 5px;
-            padding: 3px;
-            border-bottom: 1px solid #eee;
-        }
-        .log-time {
-            color: #666;
-            margin-right: 5px;
-        }
-        .log-info {
-            color: #333;
-        }
-        .log-success {
-            color: #008000;
-        }
-        .log-error {
-            color: #d9534f;
+            box-shadow: 0 4px 8px rgba(76, 175, 80, 0.4);
         }
         .active {
-            border: 2px solid #0078D4;
-            background-color: #E6F2FF;
+            border: 2px solid #4568dc;
+            background-color: #f0f5ff !important;
         }
         #api-url-container {
             padding: 10px;
@@ -171,27 +183,27 @@
             <div class="evaluation-list" id="scope-list">
                 <div class="evaluation-item scope-button" data-scope="DOCUMENT_WIDE">
                     <div class="label-ng" id="DOCUMENT_WIDE-status">NG</div>
-                    <div>ドキュメント全体</div>
+                    <div class="evaluation-item-text">ドキュメント全体</div>
                 </div>
                 <div class="evaluation-item scope-button" data-scope="ALL_SUMMARIES">
                     <div class="label-ng" id="ALL_SUMMARIES-status">NG</div>
-                    <div>すべてのサマリー</div>
+                    <div class="evaluation-item-text">すべてのサマリー</div>
                 </div>
                 <div class="evaluation-item scope-button" data-scope="SUMMARY_PAIRS">
                     <div class="label-ng" id="SUMMARY_PAIRS-status">NG</div>
-                    <div>サマリーペア</div>
+                    <div class="evaluation-item-text">サマリーペア</div>
                 </div>
                 <div class="evaluation-item scope-button" data-scope="SUMMARY_WITH_MESSAGES">
                     <div class="label-ng" id="SUMMARY_WITH_MESSAGES-status">NG</div>
-                    <div>サマリーとメッセージ</div>
+                    <div class="evaluation-item-text">サマリーとメッセージ</div>
                 </div>
                 <div class="evaluation-item scope-button" data-scope="MESSAGES_UNDER_SUMMARY">
                     <div class="label-ng" id="MESSAGES_UNDER_SUMMARY-status">NG</div>
-                    <div>サマリー下のメッセージ</div>
+                    <div class="evaluation-item-text">サマリー下のメッセージ</div>
                 </div>
                 <div class="evaluation-item scope-button" data-scope="MESSAGE_WITH_BODIES">
                     <div class="label-ng" id="MESSAGE_WITH_BODIES-status">NG</div>
-                    <div>メッセージと本文</div>
+                    <div class="evaluation-item-text">メッセージと本文</div>
                 </div>
             </div>
             
@@ -205,8 +217,6 @@
                 <input id="api-url" class="ms-TextField-field" type="text" value="http://127.0.0.1:8000/process-bullet-points">
             </div>
         </div>
-        
-        <div id="log-container"></div>
     </main>
 </body>
 
