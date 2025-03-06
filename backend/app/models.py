@@ -66,7 +66,25 @@ class EvaluationResult(BaseModel):
     criteria_results: List[CriteriaResult]
 
 class EvaluationResponse(BaseModel):
+    """評価レスポンス"""
     status: str
     message: str
     results: List[EvaluationResult]
-    score: int = 100  # デフォルトは満点の100点 
+    score: int  # 評価スコア（0-100）
+    
+    class Config:
+        # モデルの設定
+        json_encoders = {
+            # カスタムエンコーダーを定義
+            EvaluationScope: lambda v: v.value,
+            EvaluationCriteria: lambda v: v.value,
+        }
+        # スキーマの例を定義
+        schema_extra = {
+            "example": {
+                "status": "success",
+                "message": "箇条書きデータの評価が完了しました。評価スコア: 85点",
+                "results": [],
+                "score": 85
+            }
+        } 

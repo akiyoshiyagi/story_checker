@@ -251,6 +251,7 @@ let commentRanges: { [key: string]: Word.Range } = {};
 let lastCheckResults: EvaluationResponse | null = null; // チェック実行結果を保存する変数
 
 export async function run() {
+  console.log("チェック実行を開始します");
   try {
     await Word.run(async (context) => {
       // ドキュメントの読み込み
@@ -266,6 +267,7 @@ export async function run() {
       // デバッグ情報
       let debugInfo = `ドキュメント全体の文字数: ${documentBody.text.length}\n`;
       debugInfo += `最初の段落: ${titleParagraph.text}\n`;
+      console.log("デバッグ情報:", debugInfo);
       
       try {
         // ログ表示
@@ -316,11 +318,33 @@ export async function run() {
             log(`APIレスポンス受信: ${endTime - startTime}ms`, 'success');
             log(`ステータス: ${responseData.status}, メッセージ: ${responseData.message}`);
             
+            // APIレスポンスの詳細をコンソールに出力
+            console.log("APIレスポンスの詳細:");
+            console.log(responseData);
+            console.log("評価結果:");
+            console.log(responseData.results);
+            console.log("スコア:", responseData.score, "型:", typeof responseData.score);
+            
             // チェック実行結果を保存
             lastCheckResults = responseData;
             
-            // スコアを表示（未定義の場合はデフォルト値100を使用）
-            const score = responseData.score !== undefined ? responseData.score : 100;
+            // スコアを表示（バックエンドから受け取ったスコアを使用、未定義の場合は100）
+            let score = 100; // デフォルト値
+            if (responseData.score !== undefined && responseData.score !== null) {
+              score = responseData.score;
+              console.log("バックエンドから受け取ったスコア:", score);
+            } else {
+              console.log("スコアが未定義のためデフォルト値を使用:", score);
+            }
+            
+            // スコアの型変換を確実に行う
+            score = Number(score);
+            if (isNaN(score)) {
+              console.log("スコアが数値に変換できないためデフォルト値を使用");
+              score = 100;
+            }
+            
+            console.log("最終的に表示するスコア:", score);
             updateScore(score);
             
             // 評価結果の概要をログに出力
@@ -404,13 +428,18 @@ function updateScore(score: number) {
   const scoreMessage = document.getElementById("score-message");
   
   if (scoreDisplay && scoreMessage) {
-    // スコアが未定義または無効な場合は0として扱う
+    // スコアが未定義または無効な場合は100として扱う
     if (score === undefined || score === null || isNaN(score)) {
       log("スコアが未定義または無効です。デフォルト値を使用します。", 'error');
-      score = 0;
+      score = 100;
     }
     
+    // 整数値に変換
+    score = Math.round(score);
+    
+    // スコアを表示
     scoreDisplay.textContent = `${score}`;
+    console.log("スコア表示を更新:", score);
     
     // スコアに応じたメッセージと色を設定
     if (score >= 90) {
@@ -422,9 +451,12 @@ function updateScore(score: number) {
     } else if (score >= 50) {
       scoreMessage.textContent = "改善の余地があります。";
       scoreDisplay.style.color = "#FF8C00"; // オレンジ色
-    } else {
+    } else if (score >= 30) {
       scoreMessage.textContent = "多くの問題点があります。修正が必要です。";
       scoreDisplay.style.color = "#E81123"; // 赤色
+    } else {
+      scoreMessage.textContent = "非常に多くの問題があります。大幅な修正が必要です。";
+      scoreDisplay.style.color = "#A80000"; // 濃い赤色
     }
   }
 }
@@ -472,9 +504,39 @@ function setupScopeButtons() {
       const scopeAttr = button.getAttribute('data-scope');
       if (scopeAttr) {
         log(`スコープ ${scopeAttr} がクリックされました`, 'info');
+        console.log(`クリックされたスコープ属性: ${scopeAttr}`);
         
         // 文字列からEvaluationScopeに変換
-        const scope = scopeAttr as EvaluationScope;
+        let scope: EvaluationScope;
+        
+        // スコープ文字列を適切なEnum値に変換
+        switch (scopeAttr) {
+          case "DOCUMENT_WIDE":
+            scope = EvaluationScope.DOCUMENT_WIDE;
+            break;
+          case "ALL_SUMMARIES":
+            scope = EvaluationScope.ALL_SUMMARIES;
+            break;
+          case "SUMMARY_PAIRS":
+            scope = EvaluationScope.SUMMARY_PAIRS;
+            break;
+          case "SUMMARY_WITH_MESSAGES":
+            scope = EvaluationScope.SUMMARY_WITH_MESSAGES;
+            break;
+          case "MESSAGES_UNDER_SUMMARY":
+            scope = EvaluationScope.MESSAGES_UNDER_SUMMARY;
+            break;
+          case "MESSAGE_WITH_BODIES":
+            scope = EvaluationScope.MESSAGE_WITH_BODIES;
+            break;
+          default:
+            log(`不明なスコープ: ${scopeAttr}`, 'error');
+            return;
+        }
+        
+        console.log(`変換後のスコープ: ${scope}, 型: ${typeof scope}`);
+        console.log(`EvaluationScope.DOCUMENT_WIDE = ${EvaluationScope.DOCUMENT_WIDE}`);
+        console.log(`EvaluationScope.ALL_SUMMARIES = ${EvaluationScope.ALL_SUMMARIES}`);
         
         // アクティブなスコープを更新
         document.querySelectorAll('.scope-button').forEach(btn => {
@@ -513,6 +575,7 @@ async function showAllComments() {
   }
 
   log("すべてのコメントを表示します", 'info');
+  console.log("表示する評価結果:", evaluationResults);
   
   await Word.run(async (context) => {
     try {
@@ -528,6 +591,8 @@ async function showAllComments() {
       const resultsWithIssues = evaluationResults.filter(result => 
         result.criteria_results.some(cr => cr.has_issues)
       );
+      
+      console.log("問題がある評価結果:", resultsWithIssues);
       
       log(`問題がある評価結果は ${resultsWithIssues.length} 件あります`, 'info');
       
@@ -606,7 +671,7 @@ async function filterCommentsByScope(scope: EvaluationScope) {
   }
 
   log(`スコープ ${getScopeName(scope)} のコメントをフィルタリングします`, 'info');
-  log(`スコープ ${scope} のコメントをフィルタリングします`, 'info');
+  console.log(`フィルタリング対象のスコープ:`, scope);
   
   await Word.run(async (context) => {
     try {
@@ -618,29 +683,28 @@ async function filterCommentsByScope(scope: EvaluationScope) {
       allParagraphs.load(["text", "font"]);
       await context.sync();
       
-      console.log("evaluationResults");
-      console.log(evaluationResults);
-
-      // 評価結果の詳細な構造を確認
-      console.log("評価結果の詳細:");
-      evaluationResults.forEach((result, index) => {
-        console.log(`結果 ${index}:`);
-        console.log(`- スコープ: ${result.scope}`);
-        console.log(`- 対象テキスト: ${result.target_text.substring(0, 30)}...`);
-        console.log(`- 評価基準結果数: ${result.criteria_results.length}`);
-        console.log(`- 問題あり: ${result.criteria_results.some(cr => cr.has_issues)}`);
+      // 選択したスコープに関連する評価結果をフィルタリング
+      const filteredResults = evaluationResults.filter(result => {
+        // スコープの比較（文字列の場合とEnum値の場合の両方に対応）
+        const resultScope = result.scope;
+        const isMatchingScope = 
+          resultScope === scope || 
+          resultScope === scope.toString() || 
+          resultScope.toString() === scope.toString();
+        
+        return isMatchingScope && result.criteria_results.some(cr => cr.has_issues);
       });
-
-      console.log("scope（小文字）:");
-      console.log(scope.toLowerCase());
       
-      // 文字列に変換して比較
-      const filteredResults = evaluationResults.filter(result => 
-        result.scope === scope.toLowerCase() && result.criteria_results.some(cr => cr.has_issues)
-      );
-
-      console.log("filteredResults");
-      console.log(filteredResults);
+      // フィルタリング結果をコンソールに出力
+      console.log("全評価結果:", evaluationResults);
+      console.log(`スコープ ${scope} でフィルタリングした結果:`, filteredResults);
+      console.log("フィルタリング条件:", `result.scope === ${scope} または文字列比較`);
+      
+      // 各評価結果のスコープを確認
+      console.log("各評価結果のスコープ:");
+      evaluationResults.forEach((result, index) => {
+        console.log(`結果 ${index}: スコープ = ${result.scope}, 型 = ${typeof result.scope}`);
+      });
       
       log(`スコープ ${getScopeName(scope)} に関連する問題は ${filteredResults.length} 件あります`, 'info');
       
@@ -666,7 +730,7 @@ async function filterCommentsByScope(scope: EvaluationScope) {
           titleParagraph.font.highlightColor = "yellow";
           
           // コメントテキストを作成
-          const commentText = `【${getScopeName(result.scope)}】\n` + issuesCriteria.map(cr => 
+          const commentText = `【${getScopeName(scope)}】\n` + issuesCriteria.map(cr => 
             `【${getCriteriaName(cr.criteria)}】: ${cr.issues}`
           ).join('\n\n');
           
@@ -687,7 +751,7 @@ async function filterCommentsByScope(scope: EvaluationScope) {
           matchedRange.font.highlightColor = "yellow";
           
           // コメントテキストを作成（スコープ名を含める）
-          const commentText = `【${getScopeName(result.scope)}】\n` + issuesCriteria.map(cr => 
+          const commentText = `【${getScopeName(scope)}】\n` + issuesCriteria.map(cr => 
             `【${getCriteriaName(cr.criteria)}】: ${cr.issues}`
           ).join('\n\n');
           
@@ -781,136 +845,136 @@ function getScopeName(scope: EvaluationScope): string {
 // 箇条書きデータを構築する関数
 async function buildBulletPointsData(context: Word.RequestContext, titleText: string): Promise<BulletPointsRequest | null> {
   // 段落の読み込み
-  const paragraphs = context.document.body.paragraphs;
-  paragraphs.load(["text", "font", "firstLineIndent", "leftIndent"]);
-  await context.sync();
-  
-  log(`文書内の段落数: ${paragraphs.items.length}`);
-  
-  // 箇条書きの階層構造を格納するオブジェクト
-  const bulletPointsData: BulletPointsRequest = {
+        const paragraphs = context.document.body.paragraphs;
+        paragraphs.load(["text", "font", "firstLineIndent", "leftIndent"]);
+        await context.sync();
+        
+        log(`文書内の段落数: ${paragraphs.items.length}`);
+        
+        // 箇条書きの階層構造を格納するオブジェクト
+        const bulletPointsData: BulletPointsRequest = {
     title: titleText,
-    summaries: []
-  };
-  
-  // 各段落を処理して箇条書きを検出
-  const bulletPoints = [];
-  
-  for (let i = 0; i < paragraphs.items.length; i++) {
-    const paragraph = paragraphs.items[i];
-    const text = paragraph.text.trim();
-    
-    // 空の段落はスキップ
-    if (!text) continue;
+          summaries: []
+        };
+        
+        // 各段落を処理して箇条書きを検出
+        const bulletPoints = [];
+
+        for (let i = 0; i < paragraphs.items.length; i++) {
+          const paragraph = paragraphs.items[i];
+          const text = paragraph.text.trim();
+          
+          // 空の段落はスキップ
+          if (!text) continue;
     
     // タイトルと同じ段落はスキップ
     if (text === titleText) continue;
-    
-    // 箇条書きの特徴を検出（テキストの先頭に記号があるか、インデントがあるか）
-    const isBulletPoint = 
-      text.startsWith("•") || 
-      text.startsWith("-") || 
-      text.startsWith("*") ||
-      text.startsWith("○") ||
-      text.startsWith("・") ||
-      text.match(/^\d+[\.\)]\s/) ||  // 数字+ドットまたは括弧
-      paragraph.leftIndent > 0 ||
-      paragraph.firstLineIndent < 0;  // ぶら下げインデント
-    
-    if (isBulletPoint) {
-      // インデントレベルに基づいて階層を推定
-      let level = 0;
-      
-      if (paragraph.leftIndent > 0) {
-        // インデント量に基づいてレベルを推定（72ポイント = 1インチ ≒ 1レベル）
-        level = Math.min(2, Math.floor(paragraph.leftIndent / 24));
-      }
-      
-      // 先頭の記号を削除してテキストをクリーンアップ
-      let cleanText = text
-        .replace(/^[•\-*○・]\s*/, '')  // 記号を削除
-        .replace(/^\d+[\.\)]\s*/, '')  // 数字+ドットまたは括弧を削除
-        .trim();
-      
-      bulletPoints.push({
-        text: cleanText,
-        level: level,
-        paragraph: paragraph  // 段落オブジェクトを保持
-      });
-      
+          
+          // 箇条書きの特徴を検出（テキストの先頭に記号があるか、インデントがあるか）
+          const isBulletPoint = 
+            text.startsWith("•") || 
+            text.startsWith("-") || 
+            text.startsWith("*") ||
+            text.startsWith("○") ||
+            text.startsWith("・") ||
+            text.match(/^\d+[\.\)]\s/) ||  // 数字+ドットまたは括弧
+            paragraph.leftIndent > 0 ||
+            paragraph.firstLineIndent < 0;  // ぶら下げインデント
+          
+          if (isBulletPoint) {
+            // インデントレベルに基づいて階層を推定
+            let level = 0;
+            
+            if (paragraph.leftIndent > 0) {
+              // インデント量に基づいてレベルを推定（72ポイント = 1インチ ≒ 1レベル）
+              level = Math.min(2, Math.floor(paragraph.leftIndent / 24));
+            }
+            
+            // 先頭の記号を削除してテキストをクリーンアップ
+            let cleanText = text
+              .replace(/^[•\-*○・]\s*/, '')  // 記号を削除
+              .replace(/^\d+[\.\)]\s*/, '')  // 数字+ドットまたは括弧を削除
+              .trim();
+            
+            bulletPoints.push({
+              text: cleanText,
+              level: level,
+              paragraph: paragraph  // 段落オブジェクトを保持
+            });
+            
       log(`箇条書き検出: レベル ${level}, テキスト: ${cleanText.substring(0, 30)}...`, 'debug');
-    }
-  }
-  
-  log(`検出された箇条書き: ${bulletPoints.length}件`);
+          }
+        }
+        
+        log(`検出された箇条書き: ${bulletPoints.length}件`);
   
   // 箇条書きが見つからなかった場合
   if (bulletPoints.length === 0) {
     return null;
   }
-  
-  // 現在処理中のsummary, message, bodyを追跡する変数
-  let currentSummary: Summary = null;
-  let currentMessage: Message = null;
-  
-  // 各箇条書きを処理
-  for (const bulletPoint of bulletPoints) {
-    const level = bulletPoint.level;
-    const text = bulletPoint.text;
-    
-    // 空の箇条書きはスキップ
-    if (!text) continue;
-    
-    // 階層レベルに応じて処理
-    if (level === 0) {
-      // 第一階層 (summary)
-      currentSummary = {
-        content: text,
-        messages: []
-      };
-      bulletPointsData.summaries.push(currentSummary);
-      currentMessage = null;
-    } else if (level === 1) {
-      // 第二階層 (message)
-      if (!currentSummary) {
-        // 親のsummaryがない場合は作成
-        currentSummary = {
-          content: "未分類",
-          messages: []
-        };
-        bulletPointsData.summaries.push(currentSummary);
-      }
-      
-      currentMessage = {
-        content: text,
-        bodies: []
-      };
-      currentSummary.messages.push(currentMessage);
-    } else if (level === 2) {
-      // 第三階層 (body)
-      if (!currentMessage) {
-        // 親のmessageがない場合は作成
-        if (!currentSummary) {
-          currentSummary = {
-            content: "未分類",
-            messages: []
-          };
-          bulletPointsData.summaries.push(currentSummary);
+        
+        // 現在処理中のsummary, message, bodyを追跡する変数
+        let currentSummary: Summary = null;
+        let currentMessage: Message = null;
+        
+        // 各箇条書きを処理
+        for (const bulletPoint of bulletPoints) {
+          const level = bulletPoint.level;
+          const text = bulletPoint.text;
+          
+          // 空の箇条書きはスキップ
+          if (!text) continue;
+          
+          // 階層レベルに応じて処理
+          if (level === 0) {
+            // 第一階層 (summary)
+            currentSummary = {
+              content: text,
+              messages: []
+            };
+            bulletPointsData.summaries.push(currentSummary);
+            currentMessage = null;
+          } else if (level === 1) {
+            // 第二階層 (message)
+            if (!currentSummary) {
+              // 親のsummaryがない場合は作成
+              currentSummary = {
+                content: "未分類",
+                messages: []
+              };
+              bulletPointsData.summaries.push(currentSummary);
+            }
+            
+            currentMessage = {
+              content: text,
+              bodies: []
+            };
+            currentSummary.messages.push(currentMessage);
+          } else if (level === 2) {
+            // 第三階層 (body)
+            if (!currentMessage) {
+              // 親のmessageがない場合は作成
+              if (!currentSummary) {
+                currentSummary = {
+                  content: "未分類",
+                  messages: []
+                };
+                bulletPointsData.summaries.push(currentSummary);
+              }
+              
+              currentMessage = {
+                content: "未分類",
+                bodies: []
+              };
+              currentSummary.messages.push(currentMessage);
+            }
+            
+            currentMessage.bodies.push({
+              content: text
+            });
+          }
         }
         
-        currentMessage = {
-          content: "未分類",
-          bodies: []
-        };
-        currentSummary.messages.push(currentMessage);
-      }
-      
-      currentMessage.bodies.push({
-        content: text
-      });
-    }
-  }
-  
   // データの概要をログに出力
   const summariesCount = bulletPointsData.summaries.length;
   const messagesCount = bulletPointsData.summaries.reduce((count, summary) => count + summary.messages.length, 0);
@@ -918,6 +982,12 @@ async function buildBulletPointsData(context: Word.RequestContext, titleText: st
     count + summary.messages.reduce((mCount, message) => mCount + message.bodies.length, 0), 0);
   
   log(`構築結果: ${summariesCount}個のサマリー, ${messagesCount}個のメッセージ, ${bodiesCount}個のボディ`);
+  
+  // 箇条書きデータの構築が完了
+  log(`箇条書きデータの構築が完了しました: ${bulletPointsData.summaries.length}個のサマリー`);
+  
+  // デバッグ用に箇条書きデータの内容をコンソールに出力
+  console.log("構築された箇条書きデータ:", bulletPointsData);
   
   return bulletPointsData;
 }
