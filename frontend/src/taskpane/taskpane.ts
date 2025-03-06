@@ -83,172 +83,122 @@ interface EvaluationResponse {
 }
 
 // シンプルなログ機能
-function log(message: string, type: 'info' | 'error' | 'success' = 'info') {
+function log(message: string, type: 'info' | 'error' | 'success' | 'debug' = 'info') {
   const logContainer = document.getElementById("log-container");
   if (!logContainer) return;
   
-  const timestamp = new Date().toLocaleTimeString();
+  const now = new Date();
+  const timeString = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
+  
   const logEntry = document.createElement("div");
   logEntry.className = `log-entry log-${type}`;
-  logEntry.innerHTML = `<span class="log-time">[${timestamp}]</span> ${message}`;
   
-  // 最新のログを上に表示
-  logContainer.insertBefore(logEntry, logContainer.firstChild);
+  const timeSpan = document.createElement("span");
+  timeSpan.className = "log-time";
+  timeSpan.textContent = `[${timeString}]`;
   
-  // ログが多すぎる場合は古いものを削除
-  if (logContainer.children.length > 50) {
-    logContainer.removeChild(logContainer.lastChild);
-  }
+  const messageSpan = document.createElement("span");
+  messageSpan.className = `log-${type}`;
+  messageSpan.textContent = message;
+  
+  logEntry.appendChild(timeSpan);
+  logEntry.appendChild(document.createTextNode(" "));
+  logEntry.appendChild(messageSpan);
+  
+  logContainer.appendChild(logEntry);
+  logContainer.scrollTop = logContainer.scrollHeight;
 }
 
+// Office.jsの初期化
 Office.onReady((info) => {
   if (info.host === Office.HostType.Word) {
+    // アプリケーション本体を表示
     document.getElementById("sideload-msg").style.display = "none";
-    document.getElementById("app-body").style.display = "flex";
-    document.getElementById("run").onclick = run;
+    document.getElementById("app-body").style.display = "block";
+    
+    // ボタンにイベントリスナーを設定
+    document.getElementById("run").addEventListener("click", run);
+    
+    // ログ出力
+    log("アプリケーションが初期化されました", 'info');
   }
 });
 
-// コメント追加のヘルパー関数を追加
-async function addCommentSafely(context, range, commentText) {
-  // 処理開始のログ
-  log('addCommentSafely: 処理を開始しました', 'debug');
-  
-  // コメントテキストの長さ制限に使用する定数
-  const maxCommentLength = 500;
-  
-  // 実際に使うコメントテキスト（長い場合は一部を省略）
-  let safeCommentText = commentText;
-
+// テキスト範囲にコメントを安全に追加する関数
+async function addCommentSafely(context: Word.RequestContext, range: Word.Range, commentText: string): Promise<boolean> {
   try {
-    log(`addCommentSafely: コメントテキストの長さは ${commentText.length} 文字`, 'debug');
-
-    // コメントテキストが長すぎる場合は制限する
-    if (commentText.length > maxCommentLength) {
-      safeCommentText = commentText.substring(0, maxCommentLength) + "...（省略）";
-      log(`コメントが長すぎるため ${maxCommentLength} 文字に制限しました`, 'info');
-    }
-
-    // 同期して状態を確実にする前にログ出力
-    log('addCommentSafely: context.sync() を実行します', 'debug');
+    // コメントを追加
+    range.insertComment(commentText);
     await context.sync();
-    log('addCommentSafely: context.sync() 完了', 'debug');
-
-    // コメントを追加する前にログ出力
-    log(`addCommentSafely: range.insertComment を実行します`, 'debug');
-    range.insertComment(safeCommentText);
-
-    // 同期して変更を適用
-    log('addCommentSafely: コメント追加後に context.sync() を実行します', 'debug');
-    await context.sync();
-    log('addCommentSafely: コメント追加と同期が完了しました', 'debug');
-
-    // 正常終了
-    log('addCommentSafely: 処理が正常に終了しました', 'info');
     return true;
   } catch (error) {
-    // どのようなエラーなのか、より詳しくログを出す
+    // コメント追加に失敗した場合はエラーをログに記録
     log(`コメント追加エラー: ${error.message}`, 'error');
-    log(`エラー名: ${error.name}`, 'error');
-    if (error.stack) {
-      log(`スタックトレース: ${error.stack}`, 'error');
-    }
-
-    // 必要に応じてエラー内容を再スローしたり、追加処理を行う
-    // throw error;
-
     return false;
   }
 }
 
-// テキスト検索のヘルパー関数を追加
-async function findTextInDocument(context: Word.RequestContext, searchText: string, allParagraphs: Word.ParagraphCollection = null): Promise<Word.Range | null> {
+// 文書内でテキストを検索する関数
+async function findTextInDocument(context: Word.RequestContext, searchText: string, paragraphs: Word.ParagraphCollection): Promise<Word.Range | null> {
+  // 検索テキストが空の場合はnullを返す
+  if (!searchText || searchText.trim() === "") {
+    log("検索テキストが空です", 'error');
+    return null;
+  }
+  
+  // 検索テキストが長すぎる場合は短くする
+  const maxSearchLength = 255;
+  let effectiveSearchText = searchText;
+  if (searchText.length > maxSearchLength) {
+    effectiveSearchText = searchText.substring(0, maxSearchLength);
+    log(`検索テキストが長すぎるため、最初の${maxSearchLength}文字で検索します`, 'info');
+  }
+  
   try {
-    log(`"${searchText.substring(0, 30)}${searchText.length > 30 ? '...' : ''}"を文書内で検索中...`);
-    
-    // 検索テキストが短すぎる場合は検索しない
-    if (searchText.length < 3) {
-      log(`検索テキストが短すぎます: "${searchText}"`);
-      return null;
-    }
-    
-    // 1. まず完全一致で段落を検索
-    if (allParagraphs) {
-      for (let i = 0; i < allParagraphs.items.length; i++) {
-        const paragraph = allParagraphs.items[i];
-        if (paragraph.text.trim() === searchText.trim()) {
-          log(`完全一致する段落を発見: "${searchText.substring(0, 30)}..."`);
-          return paragraph.getRange();
-        }
+    // 完全一致で検索
+    for (let i = 0; i < paragraphs.items.length; i++) {
+      const paragraph = paragraphs.items[i];
+      if (paragraph.text.includes(effectiveSearchText)) {
+        // 段落内で検索テキストの位置を特定
+        const startIndex = paragraph.text.indexOf(effectiveSearchText);
+        const range = paragraph.getRange();
+        
+        // 検索テキストの範囲を取得（Word APIでは単一の引数を使用）
+        return range;
       }
     }
     
-    // 2. 部分一致で段落を検索
-    if (allParagraphs) {
-      for (let i = 0; i < allParagraphs.items.length; i++) {
-        const paragraph = allParagraphs.items[i];
-        if (paragraph.text.includes(searchText)) {
-          log(`部分一致する段落を発見: "${searchText.substring(0, 30)}..."`);
-          return paragraph.getRange();
-        }
-      }
-    }
+    // 完全一致が見つからない場合は、部分一致で検索
+    // 検索テキストを単語に分割
+    const words = effectiveSearchText.split(/\s+/).filter(word => word.length > 3);
     
-    // 3. 単語単位で検索（長いテキストの場合）
-    if (searchText.length > 10) {
-      // 最初の数単語だけを使用
-      const words = searchText.split(' ');
-      const shortSearchText = words.slice(0, Math.min(5, words.length)).join(' ');
+    if (words.length > 0) {
+      // 最も長い単語を使用
+      const longestWord = words.reduce((a, b) => a.length > b.length ? a : b);
       
-      if (shortSearchText.length > 3) {
-        log(`短縮テキストで検索: "${shortSearchText}"`);
-        
-        // 文書全体を取得
-        const documentText = context.document.body.getRange();
-        documentText.load("text");
-        await context.sync();
-        
-        // 短縮テキストで検索
-        const searchResults = documentText.search(shortSearchText);
-        searchResults.load("text");
-        await context.sync();
-        
-        log(`検索結果: ${searchResults.items.length}件`);
-        
-        if (searchResults.items.length > 0) {
-          log(`部分一致するテキストを発見: "${shortSearchText}"`);
-          return searchResults.items[0];
+      for (let i = 0; i < paragraphs.items.length; i++) {
+        const paragraph = paragraphs.items[i];
+        if (paragraph.text.includes(longestWord)) {
+          log(`部分一致: "${longestWord}" を含む段落を見つけました`, 'debug');
+          return paragraph.getRange();
         }
       }
     }
     
-    // 4. キーワード検索（最後の手段）
-    // 重要そうな単語を抽出して検索
-    const keywords = extractKeywords(searchText);
-    log(`キーワード検索: ${keywords.join(', ')}`);
-    
-    for (const keyword of keywords) {
-      if (keyword.length > 3) {
-        // 文書全体を取得
-        const documentText = context.document.body.getRange();
-        documentText.load("text");
-        await context.sync();
-        
-        // キーワードで検索
-        const searchResults = documentText.search(keyword);
-        searchResults.load("text");
-        await context.sync();
-        
-        log(`キーワード "${keyword}" の検索結果: ${searchResults.items.length}件`);
-        
-        if (searchResults.items.length > 0) {
-          log(`キーワード "${keyword}" に一致するテキストを発見`);
-          return searchResults.items[0];
+    // それでも見つからない場合は、最初の数文字で検索
+    if (effectiveSearchText.length > 10) {
+      const prefix = effectiveSearchText.substring(0, 10);
+      
+      for (let i = 0; i < paragraphs.items.length; i++) {
+        const paragraph = paragraphs.items[i];
+        if (paragraph.text.includes(prefix)) {
+          log(`プレフィックス一致: "${prefix}" を含む段落を見つけました`, 'debug');
+          return paragraph.getRange();
         }
       }
     }
     
-    log(`"${searchText.substring(0, 30)}..."に一致するテキストが見つかりませんでした`, 'error');
+    log(`テキスト "${effectiveSearchText.substring(0, 30)}..." が見つかりませんでした`, 'error');
     return null;
   } catch (error) {
     log(`テキスト検索エラー: ${error.message}`, 'error');
@@ -277,175 +227,53 @@ function extractKeywords(text: string): string[] {
   return Array.from(new Set(filteredWords));
 }
 
+// グローバル変数として評価結果を保持
+let evaluationResults: EvaluationResult[] = [];
+let activeScope: EvaluationScope | null = null;
+let commentRanges: { [key: string]: Word.Range } = {};
+
 export async function run() {
   try {
-  return Word.run(async (context) => {
-      // 結果表示エリアをリセット
-      const resultContainer = document.getElementById("result-container");
-      const resultElement = document.getElementById("result");
-      resultContainer.style.display = "none";
-      resultElement.textContent = "";
-
-      // デバッグ情報を表示するための変数
-      let debugInfo = "";
-
+    await Word.run(async (context) => {
+      // ドキュメントの読み込み
+      const documentBody = context.document.body;
+      documentBody.load("text");
+      
+      // タイトルの取得（最初の段落を仮定）
+      const titleParagraph = context.document.body.paragraphs.getFirst();
+      titleParagraph.load("text");
+      
+      await context.sync();
+      
+      // デバッグ情報
+      let debugInfo = `ドキュメント全体の文字数: ${documentBody.text.length}\n`;
+      debugInfo += `最初の段落: ${titleParagraph.text}\n`;
+      
       try {
-        // 処理開始をログに記録
-        log("箇条書き評価処理を開始します");
+        // ログ表示
+        log("ドキュメントの解析を開始します");
         
-        // 代替アプローチ: 段落のインデントレベルを使用して箇条書きを検出
-        const paragraphs = context.document.body.paragraphs;
-        paragraphs.load(["text", "font", "firstLineIndent", "leftIndent"]);
-        await context.sync();
+        // 箇条書きデータの構築
+        const bulletPointsData = await buildBulletPointsData(context, titleParagraph.text);
         
-        debugInfo += `段落の総数: ${paragraphs.items.length}\n`;
-        log(`文書内の段落数: ${paragraphs.items.length}`);
-        
-        // 箇条書きの階層構造を格納するオブジェクト
-        const bulletPointsData: BulletPointsRequest = {
-          summaries: []
-        };
-        
-        // 各段落を処理して箇条書きを検出
-        const bulletPoints = [];
-        
-        // タイトルを検出（最初の非箇条書きテキスト）
-        let titleParagraph = null;
-        let titleText = "";
-
-        for (let i = 0; i < paragraphs.items.length; i++) {
-          const paragraph = paragraphs.items[i];
-          const text = paragraph.text.trim();
+        // 箇条書きデータが存在する場合
+        if (bulletPointsData && bulletPointsData.summaries.length > 0) {
+          // データの概要をログに出力
+          const summariesCount = bulletPointsData.summaries.length;
+          const messagesCount = bulletPointsData.summaries.reduce((count, summary) => count + summary.messages.length, 0);
+          const bodiesCount = bulletPointsData.summaries.reduce((count, summary) => 
+            count + summary.messages.reduce((mCount, message) => mCount + message.bodies.length, 0), 0);
           
-          // 空の段落はスキップ
-          if (!text) continue;
-          
-          // 箇条書きの特徴を検出（テキストの先頭に記号があるか、インデントがあるか）
-          const isBulletPoint = 
-            text.startsWith("•") || 
-            text.startsWith("-") || 
-            text.startsWith("*") ||
-            text.startsWith("○") ||
-            text.startsWith("・") ||
-            text.match(/^\d+[\.\)]\s/) ||  // 数字+ドットまたは括弧
-            paragraph.leftIndent > 0 ||
-            paragraph.firstLineIndent < 0;  // ぶら下げインデント
-          
-          if (!isBulletPoint && titleParagraph === null) {
-            // 最初の非箇条書きテキストをタイトルとして保存
-            titleParagraph = paragraph;
-            titleText = text;
-            log(`タイトルを検出しました: ${text}`);
-            // タイトルをリクエストに追加
-            bulletPointsData.title = text;
-            continue; // タイトルはサマリーとして扱わない
-          }
-          
-          if (isBulletPoint) {
-            // インデントレベルに基づいて階層を推定
-            let level = 0;
-            
-            if (paragraph.leftIndent > 0) {
-              // インデント量に基づいてレベルを推定（72ポイント = 1インチ ≒ 1レベル）
-              level = Math.min(2, Math.floor(paragraph.leftIndent / 24));
-            }
-            
-            // 先頭の記号を削除してテキストをクリーンアップ
-            let cleanText = text
-              .replace(/^[•\-*○・]\s*/, '')  // 記号を削除
-              .replace(/^\d+[\.\)]\s*/, '')  // 数字+ドットまたは括弧を削除
-              .trim();
-            
-            bulletPoints.push({
-              text: cleanText,
-              level: level,
-              paragraph: paragraph  // 段落オブジェクトを保持
-            });
-            
-            debugInfo += `箇条書き検出: レベル ${level}, テキスト: ${cleanText}\n`;
-          }
-        }
-        
-        debugInfo += `検出された箇条書きの数: ${bulletPoints.length}\n`;
-        log(`検出された箇条書き: ${bulletPoints.length}件`);
-        
-        // 現在処理中のsummary, message, bodyを追跡する変数
-        let currentSummary: Summary = null;
-        let currentMessage: Message = null;
-        
-        // 段落オブジェクトとサマリーの対応を記録
-        const summaryParagraphs = new Map();
-        
-        // 各箇条書きを処理
-        for (const bulletPoint of bulletPoints) {
-          const level = bulletPoint.level;
-          const text = bulletPoint.text;
-          
-          // 空の箇条書きはスキップ
-          if (!text) continue;
-          
-          // 階層レベルに応じて処理
-          if (level === 0) {
-            // 第一階層 (summary)
-            currentSummary = {
-              content: text,
-              messages: []
-            };
-            bulletPointsData.summaries.push(currentSummary);
-            currentMessage = null;
-            
-            // サマリーと段落オブジェクトの対応を記録
-            summaryParagraphs.set(text, bulletPoint.paragraph);
-          } else if (level === 1) {
-            // 第二階層 (message)
-            if (!currentSummary) {
-              // 親のsummaryがない場合は作成
-              currentSummary = {
-                content: "未分類",
-                messages: []
-              };
-              bulletPointsData.summaries.push(currentSummary);
-            }
-            
-            currentMessage = {
-              content: text,
-              bodies: []
-            };
-            currentSummary.messages.push(currentMessage);
-          } else if (level === 2) {
-            // 第三階層 (body)
-            if (!currentMessage) {
-              // 親のmessageがない場合は作成
-              if (!currentSummary) {
-                currentSummary = {
-                  content: "未分類",
-                  messages: []
-                };
-                bulletPointsData.summaries.push(currentSummary);
-              }
-              
-              currentMessage = {
-                content: "未分類",
-                bodies: []
-              };
-              currentSummary.messages.push(currentMessage);
-            }
-            
-            currentMessage.bodies.push({
-              content: text
-            });
-          }
-        }
-        
-        // データをバックエンドに送信
-        if (bulletPointsData.summaries.length > 0) {
-          const apiUrl = (document.getElementById("api-url") as HTMLInputElement).value;
-          
-          log(`APIリクエスト送信: ${apiUrl}`);
-          log(`サマリー数: ${bulletPointsData.summaries.length}件`);
+          log(`解析結果: ${summariesCount}個のサマリー, ${messagesCount}個のメッセージ, ${bodiesCount}個のボディを検出`);
           
           try {
+            // APIリクエストの準備
+            const apiUrl = (document.getElementById("api-url") as HTMLInputElement).value;
+            log(`APIリクエスト送信: ${apiUrl}`);
+            
             const startTime = new Date().getTime();
+            
+            // APIリクエスト送信
             const response = await fetch(apiUrl, {
               method: "POST",
               headers: {
@@ -471,29 +299,7 @@ export async function run() {
             log(`ステータス: ${responseData.status}, メッセージ: ${responseData.message}`);
             
             // スコアを表示
-            const scoreContainer = document.getElementById("score-container");
-            const scoreDisplay = document.getElementById("score-display");
-            const scoreMessage = document.getElementById("score-message");
-            
-            if (scoreContainer && scoreDisplay && scoreMessage) {
-              scoreContainer.style.display = "block";
-              scoreDisplay.textContent = `${responseData.score}点`;
-              
-              // スコアに応じたメッセージを表示
-              if (responseData.score >= 90) {
-                scoreMessage.textContent = "素晴らしい！ほとんど問題がありません。";
-                scoreDisplay.style.color = "#107C10"; // 緑色
-              } else if (responseData.score >= 70) {
-                scoreMessage.textContent = "良好です。いくつかの改善点があります。";
-                scoreDisplay.style.color = "#0078D4"; // 青色
-              } else if (responseData.score >= 50) {
-                scoreMessage.textContent = "改善の余地があります。";
-                scoreDisplay.style.color = "#FF8C00"; // オレンジ色
-              } else {
-                scoreMessage.textContent = "多くの問題点があります。修正が必要です。";
-                scoreDisplay.style.color = "#E81123"; // 赤色
-              }
-            }
+            updateScore(responseData.score);
             
             // 評価結果の概要をログに出力
             const resultsWithIssues = responseData.results.filter(r => 
@@ -501,6 +307,12 @@ export async function run() {
             );
             log(`評価結果: ${responseData.results.length}件中${resultsWithIssues.length}件に問題あり`);
             log(`評価スコア: ${responseData.score}点`);
+            
+            // 評価結果をグローバル変数に保存
+            evaluationResults = responseData.results;
+            
+            // スコープごとの状態を更新
+            updateScopeStatus(evaluationResults);
             
             // 問題がある場合は詳細をログに出力
             if (resultsWithIssues.length > 0) {
@@ -514,10 +326,6 @@ export async function run() {
               });
             }
             
-            // 結果を表示
-            resultContainer.style.display = "block";
-            resultElement.textContent = JSON.stringify(responseData, null, 2);
-            
             // 評価結果をWord文書に反映
             if (responseData.status === "success") {
               log("Word文書内でテキストを検索しています...");
@@ -528,8 +336,15 @@ export async function run() {
                 allParagraphs.load(["text", "font"]);
                 await context.sync();
                 
-                // 各評価結果を処理（まずはハイライトのみ適用）
+                // コメントをすべて削除
+                await removeAllComments(context);
+                
+                // 各評価結果を処理
                 log("評価結果に基づいてテキストをハイライトしています...");
+                
+                // コメント範囲を保存するオブジェクトをクリア
+                commentRanges = {};
+                
                 for (const result of responseData.results) {
                   // 問題がある評価観点を抽出
                   const issuesCriteria = result.criteria_results.filter(cr => cr.has_issues);
@@ -543,16 +358,19 @@ export async function run() {
                         
                         // タイトルをハイライト
                         titleParagraph.font.highlightColor = "yellow";
-                      }
-                      // DOCUMENT_WIDEの評価範囲の場合
-                      else if (result.scope === EvaluationScope.DOCUMENT_WIDE) {
-                        // 改善された検索関数を使用
-                        const matchedRange = await findTextInDocument(context, result.target_text, allParagraphs);
                         
-                        if (matchedRange) {
-                          // ハイライト
-                          matchedRange.font.highlightColor = "yellow";
-                          await context.sync();
+                        // コメントテキストを作成
+                        const commentText = issuesCriteria.map(cr => 
+                          `【${getCriteriaName(cr.criteria)}】: ${cr.issues}`
+                        ).join('\n\n');
+                        
+                        // コメント追加を試みる
+                        const commentAdded = await addCommentSafely(context, titleParagraph.getRange(), commentText);
+                        
+                        if (commentAdded) {
+                          log(`評価結果をタイトルに追加しました`, 'success');
+                          // コメント範囲を保存
+                          commentRanges[`${result.scope}_${issuesCriteria[0].criteria}`] = titleParagraph.getRange();
                         }
                       }
                       // その他の評価範囲の場合
@@ -564,52 +382,27 @@ export async function run() {
                           // ハイライト
                           matchedRange.font.highlightColor = "yellow";
                           await context.sync();
-                        }
-                      }
-                    } catch (error) {
-                      log(`ハイライト処理エラー: ${error.message}`, 'error');
-                    }
-                  }
-                }
-                
-                // 変更を同期
-                await context.sync();
-                log("ハイライト処理が完了しました", 'success');
-                
-                // コメント追加処理を分離して実行
-                log("評価結果に基づいてコメントを追加しています...");
-                
-                // 各評価結果を処理（コメント追加）
-                for (const result of responseData.results) {
-                  // 問題がある評価観点を抽出
-                  const issuesCriteria = result.criteria_results.filter(cr => cr.has_issues);
-                  
-                  // 問題がある場合のみコメントを追加
-                  if (issuesCriteria.length > 0) {
-                    try {
-                      const matchedRange = await findTextInDocument(context, result.target_text, allParagraphs);
-
-                      
-                      if (matchedRange) {
-                        // 問題点をまとめたコメントを作成
-                        const commentText = `【${getScopeName(result.scope)}】\n` + 
-                          issuesCriteria.map(cr => 
+                          
+                          // コメントテキストを作成
+                          const commentText = issuesCriteria.map(cr => 
                             `【${getCriteriaName(cr.criteria)}】: ${cr.issues}`
                           ).join('\n\n');
-                        
-                        // コメント追加を試みる（失敗してもエラーにしない）
-                        const commentAdded = await addCommentSafely(context, matchedRange, commentText);
-                        
-                        if (commentAdded) {
-                          log(`評価結果をテキストに追加しました: ${getCriteriaName(issuesCriteria[0].criteria)}`, 'success');
-                        } else {
-                          // コメント追加に失敗した場合はテキスト色を変更
-                          matchedRange.font.color = "red";
-                          await context.sync();
-                          log(`コメント追加に失敗したため、テキスト色を変更しました`, 'error');
+                          
+                          // コメント追加を試みる
+                          const commentAdded = await addCommentSafely(context, matchedRange, commentText);
+                          
+                          if (commentAdded) {
+                            log(`評価結果をテキストに追加しました: ${getCriteriaName(issuesCriteria[0].criteria)}`, 'success');
+                            // コメント範囲を保存
+                            commentRanges[`${result.scope}_${issuesCriteria[0].criteria}`] = matchedRange;
+                          } else {
+                            // コメント追加に失敗した場合はテキスト色を変更
+                            matchedRange.font.color = "red";
+                            await context.sync();
+                            log(`コメント追加に失敗したため、テキスト色を変更しました`, 'error');
+                          }
                         }
                       }
-                      // }
                     } catch (error) {
                       log(`コメント処理エラー: ${error.message}`, 'error');
                     }
@@ -620,6 +413,8 @@ export async function run() {
                 await context.sync();
                 log("コメント追加処理が完了しました", 'success');
                 
+                // スコープボタンのイベントリスナーを設定
+                setupScopeButtons();
                 
                 log("Word文書の更新が完了しました", 'success');
               } catch (error) {
@@ -634,22 +429,14 @@ export async function run() {
             if (error.stack) {
               log(`エラー詳細: ${error.stack}`, 'error');
             }
-            
-            // 結果表示エリアにエラーメッセージを表示
-            resultContainer.style.display = "block";
-            resultElement.textContent = `エラーが発生しました: ${error.message || 'Unknown error'}`;
           }
         } else {
           // 箇条書きが見つからなかった場合
           log("箇条書きが見つかりませんでした", 'error');
-          resultContainer.style.display = "block";
-          resultElement.textContent = `箇条書きが見つかりませんでした。\n\nデバッグ情報:\n${debugInfo}`;
         }
       } catch (error) {
         // Word APIエラーを表示
         log(`Word APIエラー: ${error.message}`, 'error');
-        resultContainer.style.display = "block";
-        resultElement.textContent = `Word API エラー: ${error.message}\n\nデバッグ情報:\n${debugInfo}`;
       }
 
     await context.sync();
@@ -657,10 +444,209 @@ export async function run() {
   } catch (error) {
     // 全体的なエラーを表示
     log(`実行時エラー: ${error.message}`, 'error');
-    const resultContainer = document.getElementById("result-container");
-    const resultElement = document.getElementById("result");
-    resultContainer.style.display = "block";
-    resultElement.textContent = `実行時エラー: ${error.message}`;
+  }
+}
+
+// スコアを更新する関数
+function updateScore(score: number) {
+  const scoreDisplay = document.getElementById("score-display");
+  const scoreMessage = document.getElementById("score-message");
+  
+  if (scoreDisplay && scoreMessage) {
+    scoreDisplay.textContent = `${score}`;
+    
+    // スコアに応じたメッセージと色を設定
+    if (score >= 90) {
+      scoreMessage.textContent = "素晴らしい！ほとんど問題がありません。";
+      scoreDisplay.style.color = "#107C10"; // 緑色
+    } else if (score >= 70) {
+      scoreMessage.textContent = "良好です。いくつかの改善点があります。";
+      scoreDisplay.style.color = "#0078D4"; // 青色
+    } else if (score >= 50) {
+      scoreMessage.textContent = "改善の余地があります。";
+      scoreDisplay.style.color = "#FF8C00"; // オレンジ色
+    } else {
+      scoreMessage.textContent = "多くの問題点があります。修正が必要です。";
+      scoreDisplay.style.color = "#E81123"; // 赤色
+    }
+  }
+}
+
+// スコープごとの状態を更新する関数
+function updateScopeStatus(results: EvaluationResult[]) {
+  // 各スコープの問題の有無を確認
+  const scopeHasIssues: { [key: string]: boolean } = {
+    [EvaluationScope.DOCUMENT_WIDE]: false,
+    [EvaluationScope.ALL_SUMMARIES]: false,
+    [EvaluationScope.SUMMARY_PAIRS]: false,
+    [EvaluationScope.SUMMARY_WITH_MESSAGES]: false,
+    [EvaluationScope.MESSAGES_UNDER_SUMMARY]: false,
+    [EvaluationScope.MESSAGE_WITH_BODIES]: false
+  };
+  
+  // 評価結果からスコープごとの問題の有無を確認
+  for (const result of results) {
+    if (result.criteria_results.some(cr => cr.has_issues)) {
+      scopeHasIssues[result.scope] = true;
+    }
+  }
+  
+  // 各スコープの状態を更新
+  for (const scope in scopeHasIssues) {
+    const statusElement = document.getElementById(`${scope}-status`);
+    if (statusElement) {
+      if (scopeHasIssues[scope]) {
+        statusElement.textContent = "NG";
+        statusElement.className = "label-ng";
+      } else {
+        statusElement.textContent = "OK";
+        statusElement.className = "label-ok";
+      }
+    }
+  }
+}
+
+// スコープボタンのイベントリスナーを設定する関数
+function setupScopeButtons() {
+  const scopeList = document.getElementById("scope-list");
+  if (!scopeList) return;
+  
+  // すべてのスコープボタンにイベントリスナーを設定
+  const scopeItems = scopeList.querySelectorAll(".evaluation-item");
+  scopeItems.forEach(item => {
+    item.addEventListener("click", async () => {
+      const scope = item.getAttribute("data-scope") as EvaluationScope;
+      
+      // アクティブなスコープを更新
+      if (activeScope === scope) {
+        // 同じスコープをクリックした場合は、すべてのコメントを表示
+        activeScope = null;
+        item.classList.remove("active");
+        await showAllComments();
+      } else {
+        // 別のスコープをクリックした場合は、そのスコープのコメントのみを表示
+        activeScope = scope;
+        
+        // アクティブクラスを更新
+        scopeItems.forEach(i => i.classList.remove("active"));
+        item.classList.add("active");
+        
+        await filterCommentsByScope(scope);
+      }
+    });
+  });
+}
+
+// すべてのコメントを表示する関数
+async function showAllComments() {
+  await Word.run(async (context) => {
+    try {
+      // Word 2016以降ではコメントを直接操作できないため、
+      // 代わりにすべてのコメントを再作成する
+      await removeAllComments(context);
+      
+      // 評価結果からコメントを再作成
+      const allParagraphs = context.document.body.paragraphs;
+      allParagraphs.load(["text", "font"]);
+      await context.sync();
+      
+      for (const result of evaluationResults) {
+        if (result.criteria_results.some(cr => cr.has_issues)) {
+          const issuesCriteria = result.criteria_results.filter(cr => cr.has_issues);
+          
+          const matchedRange = await findTextInDocument(context, result.target_text, allParagraphs);
+          
+          if (matchedRange) {
+            // ハイライト
+            matchedRange.font.highlightColor = "yellow";
+            
+            // コメントテキストを作成
+            const commentText = issuesCriteria.map(cr => 
+              `【${getCriteriaName(cr.criteria)}】: ${cr.issues}`
+            ).join('\n\n');
+            
+            // コメント追加
+            await addCommentSafely(context, matchedRange, commentText);
+          }
+        }
+      }
+      
+      await context.sync();
+      log("すべてのコメントを表示しました", 'info');
+    } catch (error) {
+      log(`コメント表示エラー: ${error.message}`, 'error');
+    }
+  });
+}
+
+// スコープに基づいてコメントをフィルタリングする関数
+async function filterCommentsByScope(scope: EvaluationScope) {
+  await Word.run(async (context) => {
+    try {
+      // すべてのコメントを削除
+      await removeAllComments(context);
+      
+      // 選択したスコープのコメントのみを再表示
+      const allParagraphs = context.document.body.paragraphs;
+      allParagraphs.load(["text", "font"]);
+      await context.sync();
+      
+      for (const result of evaluationResults) {
+        if (result.scope === scope && result.criteria_results.some(cr => cr.has_issues)) {
+          const issuesCriteria = result.criteria_results.filter(cr => cr.has_issues);
+          
+          const matchedRange = await findTextInDocument(context, result.target_text, allParagraphs);
+          
+          if (matchedRange) {
+            // ハイライト
+            matchedRange.font.highlightColor = "yellow";
+            
+            // コメントテキストを作成
+            const commentText = issuesCriteria.map(cr => 
+              `【${getCriteriaName(cr.criteria)}】: ${cr.issues}`
+            ).join('\n\n');
+            
+            // コメント追加
+            await addCommentSafely(context, matchedRange, commentText);
+          }
+        }
+      }
+      
+      await context.sync();
+      log(`${getScopeName(scope)}のコメントのみを表示しました`, 'info');
+    } catch (error) {
+      log(`コメントフィルタリングエラー: ${error.message}`, 'error');
+    }
+  });
+}
+
+// すべてのコメントを削除する関数
+async function removeAllComments(context: Word.RequestContext) {
+  try {
+    // Word APIではコメントを直接削除する方法がないため、
+    // 代わりにすべてのコメントを検索して削除する
+    const searchResults = context.document.body.search("*", { matchWildcards: true });
+    searchResults.load("text");
+    await context.sync();
+    
+    // すべてのコメントを削除
+    for (let i = 0; i < searchResults.items.length; i++) {
+      const range = searchResults.items[i];
+      const comments = range.getComments();
+      comments.load("text");
+      await context.sync();
+      
+      if (comments.items.length > 0) {
+        for (let j = 0; j < comments.items.length; j++) {
+          comments.items[j].delete();
+        }
+      }
+    }
+    
+    await context.sync();
+    log("すべてのコメントを削除しました", 'debug');
+  } catch (error) {
+    log(`コメント削除エラー: ${error.message}`, 'error');
   }
 }
 
@@ -696,4 +682,148 @@ function getScopeName(scope: EvaluationScope): string {
   };
   
   return scopeNames[scope] || scope;
+}
+
+// 箇条書きデータを構築する関数
+async function buildBulletPointsData(context: Word.RequestContext, titleText: string): Promise<BulletPointsRequest | null> {
+  // 段落の読み込み
+  const paragraphs = context.document.body.paragraphs;
+  paragraphs.load(["text", "font", "firstLineIndent", "leftIndent"]);
+  await context.sync();
+  
+  log(`文書内の段落数: ${paragraphs.items.length}`);
+  
+  // 箇条書きの階層構造を格納するオブジェクト
+  const bulletPointsData: BulletPointsRequest = {
+    title: titleText,
+    summaries: []
+  };
+  
+  // 各段落を処理して箇条書きを検出
+  const bulletPoints = [];
+  
+  for (let i = 0; i < paragraphs.items.length; i++) {
+    const paragraph = paragraphs.items[i];
+    const text = paragraph.text.trim();
+    
+    // 空の段落はスキップ
+    if (!text) continue;
+    
+    // タイトルと同じ段落はスキップ
+    if (text === titleText) continue;
+    
+    // 箇条書きの特徴を検出（テキストの先頭に記号があるか、インデントがあるか）
+    const isBulletPoint = 
+      text.startsWith("•") || 
+      text.startsWith("-") || 
+      text.startsWith("*") ||
+      text.startsWith("○") ||
+      text.startsWith("・") ||
+      text.match(/^\d+[\.\)]\s/) ||  // 数字+ドットまたは括弧
+      paragraph.leftIndent > 0 ||
+      paragraph.firstLineIndent < 0;  // ぶら下げインデント
+    
+    if (isBulletPoint) {
+      // インデントレベルに基づいて階層を推定
+      let level = 0;
+      
+      if (paragraph.leftIndent > 0) {
+        // インデント量に基づいてレベルを推定（72ポイント = 1インチ ≒ 1レベル）
+        level = Math.min(2, Math.floor(paragraph.leftIndent / 24));
+      }
+      
+      // 先頭の記号を削除してテキストをクリーンアップ
+      let cleanText = text
+        .replace(/^[•\-*○・]\s*/, '')  // 記号を削除
+        .replace(/^\d+[\.\)]\s*/, '')  // 数字+ドットまたは括弧を削除
+        .trim();
+      
+      bulletPoints.push({
+        text: cleanText,
+        level: level,
+        paragraph: paragraph  // 段落オブジェクトを保持
+      });
+      
+      log(`箇条書き検出: レベル ${level}, テキスト: ${cleanText.substring(0, 30)}...`, 'debug');
+    }
+  }
+  
+  log(`検出された箇条書き: ${bulletPoints.length}件`);
+  
+  // 箇条書きが見つからなかった場合
+  if (bulletPoints.length === 0) {
+    return null;
+  }
+  
+  // 現在処理中のsummary, message, bodyを追跡する変数
+  let currentSummary: Summary = null;
+  let currentMessage: Message = null;
+  
+  // 各箇条書きを処理
+  for (const bulletPoint of bulletPoints) {
+    const level = bulletPoint.level;
+    const text = bulletPoint.text;
+    
+    // 空の箇条書きはスキップ
+    if (!text) continue;
+    
+    // 階層レベルに応じて処理
+    if (level === 0) {
+      // 第一階層 (summary)
+      currentSummary = {
+        content: text,
+        messages: []
+      };
+      bulletPointsData.summaries.push(currentSummary);
+      currentMessage = null;
+    } else if (level === 1) {
+      // 第二階層 (message)
+      if (!currentSummary) {
+        // 親のsummaryがない場合は作成
+        currentSummary = {
+          content: "未分類",
+          messages: []
+        };
+        bulletPointsData.summaries.push(currentSummary);
+      }
+      
+      currentMessage = {
+        content: text,
+        bodies: []
+      };
+      currentSummary.messages.push(currentMessage);
+    } else if (level === 2) {
+      // 第三階層 (body)
+      if (!currentMessage) {
+        // 親のmessageがない場合は作成
+        if (!currentSummary) {
+          currentSummary = {
+            content: "未分類",
+            messages: []
+          };
+          bulletPointsData.summaries.push(currentSummary);
+        }
+        
+        currentMessage = {
+          content: "未分類",
+          bodies: []
+        };
+        currentSummary.messages.push(currentMessage);
+      }
+      
+      currentMessage.bodies.push({
+        content: text
+      });
+    }
+  }
+  
+  // データの概要をログに出力
+  const summariesCount = bulletPointsData.summaries.length;
+  const messagesCount = bulletPointsData.summaries.reduce((count, summary) => count + summary.messages.length, 0);
+  const bodiesCount = bulletPointsData.summaries.reduce((count, summary) => 
+    count + summary.messages.reduce((mCount, message) => mCount + message.bodies.length, 0), 0);
+  
+  log(`構築結果: ${summariesCount}個のサマリー, ${messagesCount}個のメッセージ, ${bodiesCount}個のボディ`);
+  
+  return bulletPointsData;
 }

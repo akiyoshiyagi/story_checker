@@ -8,7 +8,7 @@
     <meta charset="UTF-8" />
     <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>箇条書き評価アドイン</title>
+    <title>ストーリーチェッカー</title>
 
     <!-- Office JavaScript API -->
     <script type="text/javascript" src="https://appsforoffice.microsoft.com/lib/1.1/hosted/office.js"></script>
@@ -20,6 +20,81 @@
     <link href="taskpane.css" rel="stylesheet" type="text/css" />
     
     <style>
+        body {
+            margin: 0;
+            font-family: sans-serif;
+        }
+        .container {
+            width: 100%;
+            max-width: 300px;
+            margin: 0 auto;
+            border: 1px solid #ccc;
+        }
+        .header {
+            background-color: #606060;
+            color: #ffffff;
+            padding: 10px;
+            font-weight: bold;
+            text-align: center;
+        }
+        .score-section {
+            text-align: center;
+            padding: 10px;
+        }
+        .score-section .score-label {
+            font-size: 24px;
+            margin-bottom: 8px;
+        }
+        .score-section .score-value {
+            font-size: 48px;
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
+        .score-section .score-comment {
+            margin: 0;
+        }
+        .evaluation-title {
+            font-weight: bold;
+            padding: 0 10px;
+            margin-top: 8px;
+        }
+        .evaluation-list {
+            padding: 0 10px 10px 10px;
+        }
+        .evaluation-item {
+            display: flex;
+            align-items: center;
+            margin: 5px 0;
+            cursor: pointer;
+        }
+        .evaluation-item .label-ok {
+            background-color: #D32F2F; /* 赤 */
+            color: #ffffff;
+            padding: 2px 6px;
+            margin-right: 6px;
+            width: 30px;
+            text-align: center;
+        }
+        .evaluation-item .label-ng {
+            background-color: #BDBDBD; /* グレー */
+            padding: 2px 6px;
+            margin-right: 6px;
+            width: 30px;
+            text-align: center;
+        }
+        .check-button {
+            text-align: center;
+            padding: 10px;
+        }
+        .check-button button {
+            padding: 6px 12px;
+            cursor: pointer;
+            background-color: #92B4F3;
+            border: none;
+            color: white;
+            font-weight: bold;
+            border-radius: 4px;
+        }
         #log-container {
             margin-top: 20px;
             max-height: 200px;
@@ -29,6 +104,7 @@
             font-family: monospace;
             font-size: 12px;
             background-color: #f9f9f9;
+            display: block;
         }
         .log-entry {
             margin-bottom: 5px;
@@ -48,45 +124,70 @@
         .log-error {
             color: #d9534f;
         }
+        .active {
+            border: 2px solid #0078D4;
+        }
+        #api-url-container {
+            padding: 10px;
+            display: none;
+        }
     </style>
 </head>
 
-<body class="ms-font-m ms-welcome ms-Fabric">
-    <header class="ms-welcome__header ms-bgColor-neutralLighter">
-        <img width="90" height="90" src="../../assets/logo-filled.png" alt="箇条書き評価" title="箇条書き評価" />
-        <h1 class="ms-font-su">箇条書き評価アドイン</h1>
-    </header>
+<body class="ms-Fabric">
     <section id="sideload-msg" class="ms-welcome__main">
         <h2 class="ms-font-xl">アドインを<a target="_blank" href="https://learn.microsoft.com/office/dev/add-ins/testing/test-debug-office-add-ins#sideload-an-office-add-in-for-testing">サイドロード</a>してください。</h2>
     </section>
-    <main id="app-body" class="ms-welcome__main" style="display: none;">
-        <h2 class="ms-font-xl">箇条書きデータの評価</h2>
-        <p class="ms-font-l">ドキュメント内の箇条書きを読み取り、階層構造を解析して論理的な問題点を評価します。</p>
-        
-        <div class="ms-TextField">
-            <label class="ms-Label">バックエンドAPI URL:</label>
-            <input id="api-url" class="ms-TextField-field" type="text" value="http://127.0.0.1:8000/process-bullet-points">
+    
+    <main id="app-body" style="display: none;">
+        <div class="container">
+            <div class="header">ストーリーチェッカー</div>
+            
+            <div id="score-container" class="score-section">
+                <div class="score-label">スコア</div>
+                <div id="score-display" class="score-value">-</div>
+                <p id="score-message" class="score-comment">評価を実行してください</p>
+            </div>
+            
+            <div class="evaluation-title">評価観点</div>
+            <div class="evaluation-list" id="scope-list">
+                <div class="evaluation-item" data-scope="DOCUMENT_WIDE">
+                    <div class="label-ng" id="DOCUMENT_WIDE-status">NG</div>
+                    <div>DOCUMENT_WIDE</div>
+                </div>
+                <div class="evaluation-item" data-scope="ALL_SUMMARIES">
+                    <div class="label-ng" id="ALL_SUMMARIES-status">NG</div>
+                    <div>ALL_SUMMARIES</div>
+                </div>
+                <div class="evaluation-item" data-scope="SUMMARY_PAIRS">
+                    <div class="label-ng" id="SUMMARY_PAIRS-status">NG</div>
+                    <div>SUMMARY_PAIRS</div>
+                </div>
+                <div class="evaluation-item" data-scope="SUMMARY_WITH_MESSAGES">
+                    <div class="label-ng" id="SUMMARY_WITH_MESSAGES-status">NG</div>
+                    <div>SUMMARY_WITH_MESSAGES</div>
+                </div>
+                <div class="evaluation-item" data-scope="MESSAGES_UNDER_SUMMARY">
+                    <div class="label-ng" id="MESSAGES_UNDER_SUMMARY-status">NG</div>
+                    <div>MESSAGES_UNDER_SUMMARY</div>
+                </div>
+                <div class="evaluation-item" data-scope="MESSAGE_WITH_BODIES">
+                    <div class="label-ng" id="MESSAGE_WITH_BODIES-status">NG</div>
+                    <div>MESSAGE_WITH_BODIES</div>
+                </div>
+            </div>
+            
+            <div class="check-button">
+                <button id="run">チェック実行</button>
+            </div>
+            
+            <div id="api-url-container" class="ms-TextField">
+                <label class="ms-Label">バックエンドAPI URL:</label>
+                <input id="api-url" class="ms-TextField-field" type="text" value="http://127.0.0.1:8000/process-bullet-points">
+            </div>
         </div>
         
-        <div role="button" id="run" class="ms-welcome__action ms-Button ms-Button--hero ms-font-xl">
-            <span class="ms-Button-label">箇条書きを評価</span>
-        </div>
-        
-        <div id="score-container" style="margin-top: 20px; display: none; text-align: center;">
-            <h3 class="ms-font-l">評価スコア:</h3>
-            <div id="score-display" style="font-size: 36px; font-weight: bold; color: #0078d4; margin: 10px 0;"></div>
-            <div id="score-message" style="font-style: italic; color: #666;"></div>
-        </div>
-        
-        <div id="result-container" style="margin-top: 20px; display: none;">
-            <h3 class="ms-font-l">評価結果:</h3>
-            <pre id="result" class="ms-font-m" style="background-color: #f4f4f4; padding: 10px; overflow: auto; max-height: 200px;"></pre>
-        </div>
-        
-        <div style="margin-top: 20px;">
-            <h3 class="ms-font-l">処理ログ:</h3>
-            <div id="log-container"></div>
-        </div>
+        <div id="log-container"></div>
     </main>
 </body>
 
