@@ -161,6 +161,40 @@
             padding: 10px;
             display: none;
         }
+        /* ローディングインジケーターのスタイル */
+        .loading-container {
+            display: none;
+            text-align: center;
+            padding: 16px;
+            background-color: #fff;
+            border-top: 1px solid #eee;
+        }
+        .loading-spinner {
+            display: inline-block;
+            width: 40px;
+            height: 40px;
+            border: 4px solid rgba(69, 104, 220, 0.2);
+            border-radius: 50%;
+            border-top-color: #4568dc;
+            animation: spin 1s ease-in-out infinite;
+        }
+        .loading-text {
+            margin-top: 10px;
+            color: #666;
+            font-size: 14px;
+            font-weight: 500;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        /* ボタン無効化時のスタイル */
+        button:disabled {
+            background-color: #BDBDBD !important;
+            color: #757575 !important;
+            cursor: not-allowed;
+            transform: none !important;
+            box-shadow: none !important;
+        }
     </style>
 </head>
 
@@ -183,28 +217,34 @@
             <div class="evaluation-list" id="scope-list">
                 <div class="evaluation-item scope-button" data-scope="DOCUMENT_WIDE">
                     <div class="label-ng" id="DOCUMENT_WIDE-status">NG</div>
-                    <div class="evaluation-item-text">ドキュメント全体</div>
+                    <div class="evaluation-item-text">修辞表現</div>
                 </div>
                 <div class="evaluation-item scope-button" data-scope="ALL_SUMMARIES">
                     <div class="label-ng" id="ALL_SUMMARIES-status">NG</div>
-                    <div class="evaluation-item-text">すべてのサマリー</div>
+                    <div class="evaluation-item-text">サマリー全体の論理</div>
                 </div>
                 <div class="evaluation-item scope-button" data-scope="SUMMARY_PAIRS">
                     <div class="label-ng" id="SUMMARY_PAIRS-status">NG</div>
-                    <div class="evaluation-item-text">サマリーペア</div>
+                    <div class="evaluation-item-text">前後のサマリーの論理</div>
                 </div>
                 <div class="evaluation-item scope-button" data-scope="SUMMARY_WITH_MESSAGES">
                     <div class="label-ng" id="SUMMARY_WITH_MESSAGES-status">NG</div>
-                    <div class="evaluation-item-text">サマリーとメッセージ</div>
+                    <div class="evaluation-item-text">サマリーと配下メッセージとの論理</div>
                 </div>
                 <div class="evaluation-item scope-button" data-scope="MESSAGES_UNDER_SUMMARY">
                     <div class="label-ng" id="MESSAGES_UNDER_SUMMARY-status">NG</div>
-                    <div class="evaluation-item-text">サマリー下のメッセージ</div>
+                    <div class="evaluation-item-text">メッセージ間の論理</div>
                 </div>
                 <div class="evaluation-item scope-button" data-scope="MESSAGE_WITH_BODIES">
                     <div class="label-ng" id="MESSAGE_WITH_BODIES-status">NG</div>
-                    <div class="evaluation-item-text">メッセージと本文</div>
+                    <div class="evaluation-item-text">メッセージと配下ボディとの論理</div>
                 </div>
+            </div>
+            
+            <!-- ローディングインジケーター -->
+            <div id="loading-container" class="loading-container">
+                <div class="loading-spinner"></div>
+                <div class="loading-text">チェック実行中...</div>
             </div>
             
             <div class="check-button">

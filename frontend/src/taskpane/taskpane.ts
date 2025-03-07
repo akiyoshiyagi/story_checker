@@ -109,15 +109,20 @@ function log(message: string, type: 'info' | 'error' | 'success' | 'debug' = 'in
 // Office.jsの初期化
 Office.onReady((info) => {
   if (info.host === Office.HostType.Word) {
-    document.getElementById("app-body").style.display = "flex";
+    // アドインの初期化
     document.getElementById("sideload-msg").style.display = "none";
-
-    // 実行ボタンのイベントリスナーを設定
-    document.getElementById("run").addEventListener("click", run);
-
+    document.getElementById("app-body").style.display = "block";
+    
+    // ローディングUIを初期状態で非表示に
+    const loadingContainer = document.getElementById("loading-container");
+    if (loadingContainer) loadingContainer.style.display = "none";
+    
+    // チェック実行ボタンのイベントリスナーを設定
+    document.getElementById("run").onclick = run;
+    
     // スコープボタンのイベントリスナーを設定
     setupScopeButtons();
-
+    
     // すべて表示ボタンのイベントリスナーを設定
     const showAllButton = document.getElementById("show-all");
     if (showAllButton) {
@@ -133,8 +138,9 @@ Office.onReady((info) => {
         await showAllComments();
       });
     }
-
-    log("アプリケーションが初期化されました", 'info');
+    
+    // ログ表示
+    log("アドインが初期化されました", 'success');
   }
 });
 
@@ -249,6 +255,16 @@ let lastCheckResults: EvaluationResponse | null = null; // チェック実行結
 
 export async function run() {
   console.log("チェック実行を開始します");
+  
+  // ローディングUIの表示とボタンの無効化
+  const loadingContainer = document.getElementById("loading-container");
+  const runButton = document.getElementById("run");
+  const showAllButton = document.getElementById("show-all");
+  
+  if (loadingContainer) loadingContainer.style.display = "block";
+  if (runButton) runButton.setAttribute("disabled", "true");
+  if (showAllButton) showAllButton.setAttribute("disabled", "true");
+  
   try {
     await Word.run(async (context) => {
       // ドキュメントの読み込み
@@ -411,11 +427,16 @@ export async function run() {
         log(`Word APIエラー: ${error.message}`, 'error');
       }
 
-    await context.sync();
-  });
+      await context.sync();
+    });
   } catch (error) {
     // 全体的なエラーを表示
     log(`実行時エラー: ${error.message}`, 'error');
+  } finally {
+    // 処理完了時にローディングUIを非表示にし、ボタンを再度有効化
+    if (loadingContainer) loadingContainer.style.display = "none";
+    if (runButton) runButton.removeAttribute("disabled");
+    if (showAllButton) showAllButton.removeAttribute("disabled");
   }
 }
 
@@ -443,16 +464,16 @@ function updateScore(score: number) {
       scoreMessage.textContent = "素晴らしい！ほとんど問題がありません。";
       scoreDisplay.style.color = "#107C10"; // 緑色
     } else if (score >= 70) {
-      scoreMessage.textContent = "良好です。いくつかの改善点があります。";
+      scoreMessage.textContent = "良好です。ちょっとだけ改善点があります。";
       scoreDisplay.style.color = "#0078D4"; // 青色
     } else if (score >= 50) {
-      scoreMessage.textContent = "改善の余地があります。";
+      scoreMessage.textContent = "改善の余地があります。頑張ってください。";
       scoreDisplay.style.color = "#FF8C00"; // オレンジ色
     } else if (score >= 30) {
-      scoreMessage.textContent = "多くの問題点があります。修正が必要です。";
+      scoreMessage.textContent = "多くの問題点があります。マジでやばいです。";
       scoreDisplay.style.color = "#E81123"; // 赤色
     } else {
-      scoreMessage.textContent = "非常に多くの問題があります。大幅な修正が必要です。";
+      scoreMessage.textContent = "非常に多くの問題があります。精進してください。";
       scoreDisplay.style.color = "#A80000"; // 濃い赤色
     }
   }
@@ -543,22 +564,6 @@ function setupScopeButtons() {
       }
     });
   });
-  
-  // すべて表示ボタンのイベントリスナーを設定
-  const showAllButton = document.getElementById("show-all");
-  if (showAllButton) {
-    showAllButton.addEventListener("click", async () => {
-      log("すべてのコメントを表示します", 'info');
-      
-      // アクティブなスコープをクリア
-      document.querySelectorAll('.scope-button').forEach(btn => {
-        btn.classList.remove('active');
-      });
-      
-      // すべてのコメントを表示
-      await showAllComments();
-    });
-  }
 }
 
 // すべてのコメントを表示する関数
@@ -608,9 +613,6 @@ async function showAllComments() {
           titleParagraph.load("text");
           await context.sync();
           
-          // タイトルをハイライト
-          titleParagraph.font.highlightColor = "yellow";
-          
           // コメントテキストを作成
           const commentText = `【${getScopeName(result.scope)}】\n` + issuesCriteria.map(cr => 
             `【${getCriteriaName(cr.criteria)}】: ${cr.issues}`
@@ -629,9 +631,6 @@ async function showAllComments() {
         const matchedRange = await findTextInDocument(context, result.target_text, allParagraphs);
         
         if (matchedRange) {
-          // ハイライト
-          matchedRange.font.highlightColor = "yellow";
-          
           // コメントテキストを作成（スコープ名を含める）
           const commentText = `【${getScopeName(result.scope)}】\n` + issuesCriteria.map(cr => 
             `【${getCriteriaName(cr.criteria)}】: ${cr.issues}`
@@ -720,9 +719,6 @@ async function filterCommentsByScope(scope: EvaluationScope) {
           titleParagraph.load("text");
           await context.sync();
           
-          // タイトルをハイライト
-          titleParagraph.font.highlightColor = "yellow";
-          
           // コメントテキストを作成
           const commentText = `【${getScopeName(scope)}】\n` + issuesCriteria.map(cr => 
             `【${getCriteriaName(cr.criteria)}】: ${cr.issues}`
@@ -741,11 +737,8 @@ async function filterCommentsByScope(scope: EvaluationScope) {
         const matchedRange = await findTextInDocument(context, result.target_text, allParagraphs);
         
         if (matchedRange) {
-          // ハイライト
-          matchedRange.font.highlightColor = "yellow";
-          
           // コメントテキストを作成（スコープ名を含める）
-          const commentText = `【${getScopeName(scope)}】\n` + issuesCriteria.map(cr => 
+          const commentText = `【${getScopeName(result.scope)}】\n` + issuesCriteria.map(cr => 
             `【${getCriteriaName(cr.criteria)}】: ${cr.issues}`
           ).join('\n\n');
           
@@ -762,12 +755,9 @@ async function filterCommentsByScope(scope: EvaluationScope) {
       }
       
       await context.sync();
-      log(`${getScopeName(scope)}のコメントのみを表示しました`, 'success');
-      
-      // アクティブなスコープを更新
-      activeScope = scope;
+      log(`スコープ ${getScopeName(scope)} のコメントを表示しました`, 'success');
     } catch (error) {
-      log(`コメントフィルタリングエラー: ${error.message}`, 'error');
+      log(`コメント表示エラー: ${error.message}`, 'error');
     }
   });
 }
@@ -825,12 +815,12 @@ function getCriteriaName(criteria: EvaluationCriteria): string {
 // 評価範囲の名前を取得する
 function getScopeName(scope: EvaluationScope): string {
   const scopeNames = {
-    [EvaluationScope.DOCUMENT_WIDE]: "ドキュメント全体",
-    [EvaluationScope.ALL_SUMMARIES]: "すべてのサマリー",
-    [EvaluationScope.SUMMARY_PAIRS]: "サマリーペア",
-    [EvaluationScope.SUMMARY_WITH_MESSAGES]: "サマリーとメッセージ",
-    [EvaluationScope.MESSAGES_UNDER_SUMMARY]: "サマリー下のメッセージ",
-    [EvaluationScope.MESSAGE_WITH_BODIES]: "メッセージと本文"
+    [EvaluationScope.DOCUMENT_WIDE]: "修辞表現",
+    [EvaluationScope.ALL_SUMMARIES]: "サマリー全体の論理",
+    [EvaluationScope.SUMMARY_PAIRS]: "前後のサマリーの論理",
+    [EvaluationScope.SUMMARY_WITH_MESSAGES]: "サマリーと配下メッセージとの論理",
+    [EvaluationScope.MESSAGES_UNDER_SUMMARY]: "メッセージ間の論理",
+    [EvaluationScope.MESSAGE_WITH_BODIES]: "メッセージと配下ボディとの論理"
   };
   
   return scopeNames[scope] || scope;
@@ -1049,7 +1039,7 @@ async function showHighestPriorityComments() {
     
     // 該当するスコープのコメントのみを表示
     await filterCommentsByScope(highestPriorityScope);
-  } else {
+        } else {
     log("NGカテゴリーが見つかりませんでした。すべてのコメントを表示します。", 'info');
     await showAllComments();
   }

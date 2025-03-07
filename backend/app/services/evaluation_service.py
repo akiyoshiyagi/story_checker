@@ -57,37 +57,37 @@ def get_criteria_for_scope(scope: EvaluationScope) -> List[EvaluationCriteria]:
         ],
         EvaluationScope.MESSAGE_WITH_BODIES: [
             EvaluationCriteria.MESSAGE_BODY_CONSISTENCY
-        ],
-        EvaluationScope.SENTENCE: [
-            EvaluationCriteria.RHETORICAL_EXPRESSION
         ]
+        # EvaluationScope.SENTENCE: [
+        #     EvaluationCriteria.RHETORICAL_EXPRESSION
+        # ]
     }
     
     return scope_criteria_map.get(scope, [])
 
 # プロンプトの読み込み
-def load_prompt(criteria: EvaluationCriteria, scope: EvaluationScope):
+def load_prompt(prompt_name: str) -> str:
     """
-    評価観点と評価範囲に応じたプロンプトを読み込む
+    プロンプトファイルを読み込む
     
     Args:
-        criteria: 評価観点
-        scope: 評価範囲
+        prompt_name: プロンプト名
         
     Returns:
-        プロンプトの文字列
+        プロンプトの内容
     """
     # プロンプトファイルのパスを構築
-    prompt_filename = f"{criteria.value}_{scope.value}.txt"
-    prompt_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "prompts", prompt_filename)
+    prompt_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "prompts", f"{prompt_name}.txt")
     
-    # プロンプトファイルが存在しない場合はデフォルトのプロンプトを使用
+    # ファイルが存在するか確認
     if not os.path.exists(prompt_path):
-        prompt_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "prompts", "default_prompt.txt")
+        raise FileNotFoundError(f"プロンプトファイルが見つかりません: {prompt_path}")
     
-    # プロンプトを読み込む
+    # ファイルを読み込む
     with open(prompt_path, "r", encoding="utf-8") as f:
-        return f.read()
+        prompt = f.read()
+    
+    return prompt
 
 class EvaluationService:
     def __init__(self, openai_service):
@@ -162,120 +162,114 @@ class EvaluationService:
     
     async def _evaluate_criteria_document_wide(self, request: BulletPointsRequest, criteria: EvaluationCriteria, scope: EvaluationScope) -> List[EvaluationResult]:
         """
-        ドキュメント全体の特定の評価観点に対する評価を行う
+        文書全体の特定の評価観点に対する評価を行う
         
         Args:
-            request: 箇条書きデータのリクエスト
+            request: リクエスト
             criteria: 評価観点
             scope: 評価範囲
             
         Returns:
             評価結果のリスト
         """
-        results = []
-        
-        # 修辞表現の評価の場合は一文ずつ評価する
         if criteria == EvaluationCriteria.RHETORICAL_EXPRESSION:
             # 一文ずつ評価するためのプロンプトを読み込む
-            prompt = load_prompt(criteria, EvaluationScope.SENTENCE)
+            prompt = load_prompt("rhetorical_expression_sentence")
             
-            # すべてのサマリーとメッセージを収集
-            all_sentences = []
+            # サマリーとメッセージのテキストのみを収集（タイトルとボディは除外）
+            all_texts = []
             
-            # サマリーとメッセージの文を収集（bodyは評価対象外）
+            # サマリーを追加
             for summary in request.summaries:
-                # サマリーを文単位に分割
-                summary_sentences = self._split_into_sentences(summary.content)
-                for sentence in summary_sentences:
-                    if sentence.strip():  # 空文字でない場合
-                        all_sentences.append({
-                            "text": sentence,
-                            "type": "サマリー",
-                            "original": summary.content
-                        })
+                all_texts.append(summary.content)
                 
+                # メッセージを追加
                 for message in summary.messages:
-                    # メッセージを文単位に分割
-                    message_sentences = self._split_into_sentences(message.content)
-                    for sentence in message_sentences:
-                        if sentence.strip():  # 空文字でない場合
-                            all_sentences.append({
-                                "text": sentence,
-                                "type": "メッセージ",
-                                "original": message.content
-                            })
+                    all_texts.append(message.content)
+                    
+                    # ボディは追加しない
             
-            # 各文を評価（同一評価観点内は直列処理）
-            for sentence_info in all_sentences:
+            # 文に分割
+            sentences = []
+            for text in all_texts:
+                sentences.extend(self._split_into_sentences(text))
+            
+            print(f"修辞表現の評価対象: サマリーとメッセージの文章のみ（合計 {len(sentences)} 文）")
+            
+            # 各文を評価
+            results = []
+            for sentence in sentences:
+                # 空の文はスキップ
+                if not sentence.strip():
+                    continue
+                
                 # 評価データを準備
-                evaluation_data = sentence_info["text"]
+                data = {
+                    "target_text": sentence
+                }
                 
-                # OpenAI APIを使用して評価
-                response = await self.openai_service.evaluate(prompt, evaluation_data)
+                # 評価を実行
+                response = await self.openai_service.evaluate(prompt, data)
                 
-                # レスポンスの解析
+                # 評価結果を解析
                 criteria_result = self._parse_evaluation_response(response, criteria)
                 
                 # 問題がある場合のみ結果に追加
                 if criteria_result.has_issues:
-                    # 評価結果の作成
-                    result = EvaluationResult(
-                        target_text=sentence_info["text"],
+                    results.append(EvaluationResult(
+                        target_text=sentence,
                         scope=scope,
                         criteria_results=[criteria_result]
-                    )
-                    
-                    results.append(result)
+                    ))
+            
+            return results
         else:
             # 他の評価観点は従来通りドキュメント全体で評価
             # プロンプトの読み込み
-            prompt = load_prompt(criteria, scope)
+            prompt = load_prompt(f"{criteria.value}_document_wide")
             
             # ドキュメント全体のテキストを構築
-            all_text = []
+            document_text = ""
             
-            # すべてのサマリーとメッセージを収集
-            for summary in request.summaries:
-                all_text.append(f"【サマリー】{summary.content}")
+            # タイトルがあれば追加
+            if request.title:
+                document_text += f"タイトル: {request.title}\n\n"
+            
+            # サマリーを追加
+            for i, summary in enumerate(request.summaries):
+                document_text += f"サマリー {i+1}: {summary.content}\n"
                 
-                for message in summary.messages:
-                    all_text.append(f"【メッセージ】{message.content}")
+                # メッセージを追加
+                for j, message in enumerate(summary.messages):
+                    document_text += f"  メッセージ {j+1}: {message.content}\n"
                     
-                    for body in message.bodies:
-                        all_text.append(f"【ボディ】{body.content}")
+                    # ボディを追加
+                    for k, body in enumerate(message.bodies):
+                        document_text += f"    ボディ {k+1}: {body.content}\n"
             
-            # 全テキストを結合
-            full_document_text = "\n".join(all_text)
+            document_text += "\n"
             
             # 評価データを準備
-            evaluation_data = {
+            data = {
                 "document": {
-                    "full_text": full_document_text,
-                    "summaries_count": len(request.summaries),
-                    "total_items_count": len(all_text)
+                    "full_text": document_text
                 }
             }
             
-            # OpenAI APIを使用して評価
-            response = await self.openai_service.evaluate(prompt, evaluation_data)
+            # 評価を実行
+            response = await self.openai_service.evaluate(prompt, data)
             
-            # レスポンスの解析
+            # 評価結果を解析
             criteria_result = self._parse_evaluation_response(response, criteria)
             
-            # 評価結果の作成
-            target_text = " ".join(all_text)
-            # 末尾の制御文字を削除
-            target_text = target_text.rstrip('\u0005')
-                
+            # 評価結果を作成
             result = EvaluationResult(
-                target_text=target_text,
+                target_text=document_text[:200] + "...",  # 長すぎるので省略
                 scope=scope,
                 criteria_results=[criteria_result]
             )
             
-            results.append(result)
-        
-        return results
+            return [result]
     
     def _split_into_sentences(self, text: str) -> List[str]:
         """
@@ -329,49 +323,45 @@ class EvaluationService:
         すべてのサマリーの特定の評価観点に対する評価を行う
         
         Args:
-            request: 箇条書きデータのリクエスト
+            request: リクエスト
             criteria: 評価観点
             scope: 評価範囲
             
         Returns:
             評価結果のリスト
         """
-        results = []
-        
         # プロンプトの読み込み
-        prompt = load_prompt(criteria, scope)
+        prompt = load_prompt(f"{criteria.value}_all_summaries")
         
         # すべてのサマリーテキストを収集
-        all_summaries = []
-        for summary in request.summaries:
-            all_summaries.append(summary.content)
+        all_summaries = [summary.content for summary in request.summaries]
         
-        # 評価対象のデータを準備
-        evaluation_data = {
+        # サマリーが存在しない場合は空のリストを返す
+        if not all_summaries:
+            print(f"警告: サマリーが見つかりません。評価をスキップします。")
+            return []
+        
+        # 評価データを準備
+        data = {
             "summaries": {
-                "texts": all_summaries,
-                "count": len(all_summaries)
+                "texts": all_summaries
             }
         }
         
-        # OpenAI APIを使用して評価
-        response = await self.openai_service.evaluate(prompt, evaluation_data)
+        # 評価を実行
+        response = await self.openai_service.evaluate(prompt, data)
         
-        # レスポンスの解析
+        # 評価結果を解析
         criteria_result = self._parse_evaluation_response(response, criteria)
         
-        # 評価結果の作成
-        target_text = "\n".join(all_summaries)
-        
+        # 評価結果を作成
         result = EvaluationResult(
-            target_text=target_text,
+            target_text="\n".join(all_summaries),
             scope=scope,
             criteria_results=[criteria_result]
         )
         
-        results.append(result)
-        
-        return results
+        return [result]
     
     async def _evaluate_summary_pairs(self, request: BulletPointsRequest) -> List[EvaluationResult]:
         """
@@ -425,10 +415,10 @@ class EvaluationService:
             評価結果
         """
         # プロンプトの読み込み
-        prompt = load_prompt(criteria, scope)
+        prompt = load_prompt(f"{criteria.value}_summary_pairs")
         
-        # 評価対象のデータを準備
-        evaluation_data = {
+        # 評価データを準備
+        data = {
             "previous_summary": {
                 "summary_text": previous_summary.content
             },
@@ -437,58 +427,56 @@ class EvaluationService:
             }
         }
         
-        # OpenAI APIを使用して評価
-        response = await self.openai_service.evaluate(prompt, evaluation_data)
+        # 評価を実行
+        response = await self.openai_service.evaluate(prompt, data)
         
-        # レスポンスの解析
+        # 評価結果を解析
         criteria_result = self._parse_evaluation_response(response, criteria)
         
-        # 評価結果の作成
-        target_text = current_summary.content
-        # 末尾の制御文字を削除
-        target_text = target_text.rstrip('\u0005')
-            
-        result = EvaluationResult(
-            target_text=target_text,
+        # 評価結果を作成
+        return EvaluationResult(
+            target_text=f"{previous_summary.content}\n{current_summary.content}",
             scope=scope,
             criteria_results=[criteria_result]
         )
-        
-        return result
     
     async def _evaluate_summary_with_messages(self, request: BulletPointsRequest) -> List[EvaluationResult]:
         """
         サマリーとメッセージの評価を行う
         
         Args:
-            request: 箇条書きデータのリクエスト
+            request: リクエスト
             
         Returns:
             評価結果のリスト
         """
         results = []
-        scope = EvaluationScope.SUMMARY_WITH_MESSAGES
-        criteria_list = get_criteria_for_scope(scope)
         
-        # 各サマリーと評価観点ごとに評価タスクを作成
-        tasks = []
-        for i, summary in enumerate(request.summaries):
-            for criteria in criteria_list:
-                tasks.append(self._evaluate_criteria_summary_with_messages(summary, criteria, scope))
-        
-        # 並列実行して結果を取得
-        criteria_results_list = await asyncio.gather(*tasks)
-        
-        # 結果を平坦化
-        for criteria_result in criteria_results_list:
-            if criteria_result:  # Noneでない場合のみ追加
-                results.append(criteria_result)
+        # サマリーごとに評価
+        for summary in request.summaries:
+            # メッセージが存在しない場合はスキップ
+            if not summary.messages:
+                continue
+            
+            # SEQUENTIAL_DEVELOPMENTの評価観点を使用
+            # 実際の論理展開タイプは_evaluate_criteria_summary_with_messagesメソッド内で判断される
+            criteria = EvaluationCriteria.SEQUENTIAL_DEVELOPMENT
+            
+            # 評価を実行
+            result = await self._evaluate_criteria_summary_with_messages(
+                summary=summary,
+                criteria=criteria,
+                scope=EvaluationScope.SUMMARY_WITH_MESSAGES
+            )
+            
+            if result:
+                results.append(result)
         
         return results
     
     async def _evaluate_criteria_summary_with_messages(self, summary: Summary, criteria: EvaluationCriteria, scope: EvaluationScope) -> Optional[EvaluationResult]:
         """
-        サマリーとメッセージの特定の評価観点に対する評価を行う
+        サマリーとメッセージの評価を行う
         
         Args:
             summary: サマリー
@@ -498,35 +486,66 @@ class EvaluationService:
         Returns:
             評価結果
         """
-        # プロンプトの読み込み
-        prompt = load_prompt(criteria, scope)
+        # サマリーとメッセージの内容を取得
+        summary_text = summary.content
+        messages = [message.content for message in summary.messages]
         
-        # 評価対象のデータを準備
-        evaluation_data = {
-            "summary": {
-                "summary_text": summary.content,
-                "messages": [
-                    {
-                        "message_text": message.content
-                    } for message in summary.messages
-                ]
-            }
+        # メッセージが存在しない場合はスキップ
+        if not messages:
+            return None
+        
+        # 評価データを準備
+        data = {
+            "summary": summary_text,
+            "messages": messages
         }
         
-        # OpenAI APIを使用して評価
-        response = await self.openai_service.evaluate(prompt, evaluation_data)
+        # SUMMARY_WITH_MESSAGESカテゴリーの場合、まず論理展開のタイプを分類する
+        if scope == EvaluationScope.SUMMARY_WITH_MESSAGES:
+            # 分類用のプロンプトを読み込む
+            classifier_prompt = load_prompt("development_type_classifier")
+            
+            # 分類を実行
+            classification_response = await self.openai_service.evaluate(classifier_prompt, data)
+            
+            try:
+                # 分類結果をJSONとして解析
+                classification_result = json.loads(classification_response)
+                development_type = classification_result.get("development_type", "sequential_development")
+                
+                print(f"サマリーの論理展開タイプ: {development_type}")
+                print(f"分類理由: {classification_result.get('explanation', '理由なし')}")
+                
+                # 論理展開のタイプに応じてプロンプトを選択
+                if development_type == "individual_development":
+                    # 独立的論理展開の場合
+                    prompt = load_prompt("individual_development_summary_with_messages")
+                else:
+                    # 逐次的論理展開の場合（デフォルト）
+                    prompt = load_prompt("sequential_development_summary_with_messages")
+            except json.JSONDecodeError:
+                # 分類に失敗した場合はデフォルトのプロンプトを使用
+                print(f"論理展開タイプの分類に失敗しました。デフォルトのプロンプトを使用します。")
+                prompt = load_prompt("sequential_development_summary_with_messages")
+        else:
+            # 通常の評価観点の場合は対応するプロンプトを読み込む
+            prompt = load_prompt(criteria.value)
         
-        # レスポンスの解析
+        # 評価を実行
+        response = await self.openai_service.evaluate(prompt, data)
+        
+        # 評価結果を解析
         criteria_result = self._parse_evaluation_response(response, criteria)
         
-        # 評価結果の作成
-        result = EvaluationResult(
-            target_text=summary.content,
+        # 評価対象のテキストを結合（サマリーとメッセージを含める）
+        target_text = f"{summary_text}\n\n" + "\n".join(messages)
+        
+        # 評価結果を作成
+        return EvaluationResult(
+            target_text=target_text,
             scope=scope,
             criteria_results=[criteria_result]
         )
-        
-        return result
     
     async def _evaluate_messages_under_summary(self, request: BulletPointsRequest) -> List[EvaluationResult]:
         """
@@ -560,7 +579,7 @@ class EvaluationService:
     
     async def _evaluate_criteria_messages_under_summary(self, summary: Summary, criteria: EvaluationCriteria, scope: EvaluationScope) -> Optional[EvaluationResult]:
         """
-        サマリー配下のメッセージの特定の評価観点に対する評価を行う
+        サマリー配下のメッセージ群の特定の評価観点に対する評価を行う
         
         Args:
             summary: サマリー
@@ -570,39 +589,34 @@ class EvaluationService:
         Returns:
             評価結果
         """
-        # プロンプトの読み込み
-        prompt = load_prompt(criteria, scope)
+        # メッセージが存在しない場合はスキップ
+        if not summary.messages:
+            return None
         
-        # 評価対象のデータを準備
-        evaluation_data = {
-            "summary": {
-                "summary_text": summary.content,
-                "messages": [
-                    {
-                        "message_text": message.content
-                    } for message in summary.messages
-                ]
-            }
+        # プロンプトの読み込み
+        prompt = load_prompt(f"{criteria.value}_messages_under_summary")
+        
+        # メッセージテキストを収集
+        message_texts = [message.content for message in summary.messages]
+        
+        # 評価データを準備
+        data = {
+            "summary": summary.content,
+            "messages": message_texts
         }
         
-        # OpenAI APIを使用して評価
-        response = await self.openai_service.evaluate(prompt, evaluation_data)
+        # 評価を実行
+        response = await self.openai_service.evaluate(prompt, data)
         
-        # レスポンスの解析
+        # 評価結果を解析
         criteria_result = self._parse_evaluation_response(response, criteria)
         
-        # 評価結果の作成
-        # メッセージのテキストを結合
-        message_texts = [message.content for message in summary.messages]
-        target_text = "\n".join(message_texts)
-        
-        result = EvaluationResult(
-            target_text=target_text,
+        # 評価結果を作成
+        return EvaluationResult(
+            target_text=f"{summary.content}\n" + "\n".join(message_texts),
             scope=scope,
             criteria_results=[criteria_result]
         )
-        
-        return result
     
     async def _evaluate_message_with_bodies(self, request: BulletPointsRequest) -> List[EvaluationResult]:
         """
@@ -650,35 +664,34 @@ class EvaluationService:
         Returns:
             評価結果
         """
-        # プロンプトの読み込み
-        prompt = load_prompt(criteria, scope)
+        # ボディが存在しない場合はスキップ
+        if not message.bodies:
+            return None
         
-        # 評価対象のデータを準備
-        evaluation_data = {
-            "message": {
-                "message_text": message.content,
-                "bodies": [{"body_text": body.content} for body in message.bodies]
-            }
+        # プロンプトの読み込み
+        prompt = load_prompt(f"{criteria.value}_message_with_bodies")
+        
+        # ボディテキストを収集
+        body_texts = [body.content for body in message.bodies]
+        
+        # 評価データを準備
+        data = {
+            "message": message.content,
+            "bodies": body_texts
         }
         
-        # OpenAI APIを使用して評価
-        response = await self.openai_service.evaluate(prompt, evaluation_data)
+        # 評価を実行
+        response = await self.openai_service.evaluate(prompt, data)
         
-        # レスポンスの解析
+        # 評価結果を解析
         criteria_result = self._parse_evaluation_response(response, criteria)
         
-        # 評価結果の作成
-        # ボディのテキストを結合
-        body_texts = [body.content for body in message.bodies]
-        target_text = message.content + "\n" + "\n".join(body_texts)
-        
-        result = EvaluationResult(
-            target_text=target_text,
+        # 評価結果を作成
+        return EvaluationResult(
+            target_text=f"{message.content}\n" + "\n".join(body_texts),
             scope=scope,
             criteria_results=[criteria_result]
         )
-        
-        return result
     
     def _parse_evaluation_response(self, response: str, criteria: EvaluationCriteria) -> CriteriaResult:
         """
@@ -843,9 +856,9 @@ class EvaluationService:
                 print(f"  {i+1}. {criteria}")
             sys.stdout.flush()  # 標準出力をフラッシュ
             
-            # 問題がある評価観点ごとに6点減点
-            deduction = num_criteria_with_issues * 6
-            print(f"\n減点計算: {num_criteria_with_issues} × 6 = {deduction}点")
+            # 問題がある評価観点ごとに8点減点
+            deduction = num_criteria_with_issues * 8
+            print(f"\n減点計算: {num_criteria_with_issues} × 8 = {deduction}点")
             sys.stdout.flush()  # 標準出力をフラッシュ
             
             # スコアを計算（最低10点）
